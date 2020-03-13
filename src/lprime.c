@@ -40,6 +40,11 @@
 #include <sys/timeb.h>
 #include "lprime.h"
 
+#ifdef NETLLR
+#include "net.h"
+nethandle* net = NULL;
+#endif
+
 /* Globals */
 
 #define OPEN_MAX 20 
@@ -59,6 +64,7 @@ int VERBOSE = 0;
 int MENUING = 0;
 int PROCESSFILE = 0;
 int SINGLETEST = 0;
+int NETWORKING = 0;
 
 /* Common code */
 
@@ -79,9 +85,7 @@ int SINGLETEST = 0;
 #include "kronecker.c"
 #include "Qfields.c"
 #include "factor.c"
-#if defined (__linux__) || defined (__FreeBSD__) || defined (__APPLE__)
-#include "mpz_aprcl.c"
-#endif
+#include "md5.c"
 #include "Llr.c"
 
 /* Signal handlers */
@@ -218,9 +222,17 @@ int main (
 
 	for (i = 1; i < argc; i++) {
 		p = argv[i];
-		if (*p++ != '-') {		// Process filename in command line
-			if (PROCESSFILE) break;
-			p--;
+#ifdef NETLLR
+		if (*p == 'h' && !strncmp(p, "http://", 7)) {		// REST URL
+			if (PROCESSFILE || NETWORKING) break;
+			net = net_init(p);
+			NETWORKING = 1;
+			continue;
+		}
+		else
+#endif
+		if (*p != '-') {		// Process filename in command line
+			if (PROCESSFILE || NETWORKING) break;
 			strcpy (m_pgen_input, p);
 			strcpy (m_pgen_output, p);
 			p2 = strrchr (m_pgen_output, '.');
@@ -231,6 +243,7 @@ int main (
 			PROCESSFILE = 1;
 			continue;
 		}
+		p++;
 		switch (*p++) {
 
 /* Accept a -A switch indicating an alternate set of INI files */
@@ -305,6 +318,52 @@ int main (
 			*p2 = '\0';
 			opcnt++;
 			break;
+
+/* -L - LargePages */					// Set a LargePages option
+
+		case 'L':
+		case 'l':
+            if (opcnt >= 10)				// Maximum 10 options...
+                break;
+            strcpy(keywords[opcnt], "LargePages");
+            while (isspace(*p))
+                p++;
+            p2 = values[opcnt];
+            while (isdigit(*p))
+                *p2++ = *p++;
+            *p2 = '\0';
+            opcnt++;
+            break;
+
+
+/* -I - Identifier */					// Set process identifier
+
+		case 'I':
+		case 'i':
+            if (opcnt >= 10)				// Maximum 10 options...
+                break;
+            strcpy(keywords[opcnt], "Identifier");
+            while (isspace(*p))
+                p++;
+            p2 = values[opcnt];
+            while (*p && !isspace(*p))
+                *p2++ = *p++;
+            *p2 = '\0';
+            opcnt++;
+            break;
+
+
+/* -P - Proof mode */					// Set Atnashev Proof mode
+
+		case 'P':
+		case 'p':
+            while (isspace(*p))
+                p++;
+            p2 = PROOFMODE;
+            while (*p && !isspace(*p))
+                *p2++ = *p++;
+            *p2 = '\0';
+            break;
 
 
 /* -Q - Test a single k*b^n+c or b^n-b^m+c number */
@@ -410,6 +469,13 @@ DIGITSONLY:
 			NO_GUI = FALSE;
 			break;
 
+/* -U - URL */
+
+		case 'U':
+		case 'u':
+			NETWORKING = 1;
+			break;
+
 /* -V - version number */
 
 		case 'V':
@@ -513,8 +579,27 @@ DIGITSONLY:
 
 /* Bring up the main menu */
 
-	if (MENUING)
+	if (0)
+	{
+	}
+#ifdef MENULLR
+	else if (MENUING)
 		main_menu ();
+#endif
+#ifdef NETLLR
+	else if (NETWORKING)
+	{
+		if (net == NULL)
+		{
+			IniGetString(INI_FILE, "URL", buf, sizeof(buf), "http://localhost:5555/api/");
+			net = net_init(buf);
+		}
+		initGlobals();
+		char workerID[80];
+		IniGetString(INI_FILE, "Identifier", workerID, 80, "llr");
+		net_main(net, workerID);
+	}
+#endif
 
 /* Continue testing the range */
 

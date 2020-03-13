@@ -15,7 +15,7 @@
 		if (gw_test_illegal_sumout (gwdata)) {\
 			sprintf (buf, ERRMSG0L, J, N, ERRMSG1A);\
 			clearline(100);\
-			OutputBoth (buf);\
+			OutputError (buf);\
 			sleep5 = TRUE;\
 			goto error;\
 		}\
@@ -33,7 +33,7 @@
 			    suminp == last_suminp[K] &&\
 			    sumout == last_sumout[K]) {\
 				clearline(100);\
-				OutputBoth (ERROK);\
+				OutputError (ERROK);\
 				saving = 1;\
 			} else {\
 				char	msg[80], sic[80], soc[80];\
@@ -43,7 +43,7 @@
 				    sprintf (msg, ERRMSG1B, suminp, sumout);\
 				    sprintf (buf, ERRMSG0L, J, N, msg);\
 					clearline(100);\
-				    OutputBoth (buf);\
+				    OutputError (buf);\
 				    last_bit[K] = J;\
 				    last_suminp[K] = suminp;\
 				    last_sumout[K] = sumout;\
@@ -60,12 +60,12 @@
 			if (J == last_bit[K] &&\
 			    gw_get_maxerr(gwdata) == last_maxerr[K] && !abonroundoff && !care) {\
 				clearline(100);\
-				OutputBoth (ERROK);\
+				OutputError (ERROK);\
 				gwdata->GWERROR = 0;\
 				clearline(100);\
 				IniWriteInt(INI_FILE, "Error_Count", error_count = IniGetInt(INI_FILE, "Error_Count", 0) + 1);\
 				if (error_count > MAX_ERROR_COUNT) {\
-					OutputBoth (ERRMSG9);\
+					OutputError (ERRMSG9);\
 					IniWriteString(INI_FILE, "Error_Count", NULL);\
 					will_try_larger_fft = TRUE;\
 					last_bit[K]  = 0;\
@@ -73,7 +73,7 @@
 					maxerr_recovery_mode[K] = FALSE;\
 				}\
 				else {\
-					OutputBoth (ERRMSG6);\
+					OutputError (ERRMSG6);\
 					maxerr_recovery_mode[K] = TRUE;\
 				}\
 				sleep5 = FALSE;\
@@ -84,11 +84,11 @@
 				sprintf (msg, ERRMSG1C, gw_get_maxerr(gwdata), maxroundoff);\
 				sprintf (buf, ERRMSG0L, J, N, msg);\
 				clearline(100);\
-				OutputBoth (buf);\
+				OutputError (buf);\
 				if (J == last_bit[K])\
 					will_try_larger_fft = TRUE;\
 				if (will_try_larger_fft) {\
-					OutputBoth (ERRMSG8);\
+					OutputError (ERRMSG8);\
 					IniWriteString(INI_FILE, "Error_Count", NULL);\
 					last_bit[K]  = 0;\
 					last_maxerr[K]  = 0.0;\
@@ -217,6 +217,7 @@ char	SVINI_FILE[80] = {0};
 char	RESFILE[80] = {0};
 char	LOGFILE[80] = {0};
 char	EXTENSION[8] = {0};;
+char	PROOFMODE[80] = {0};
 int volatile ERRCHK = 0;
 unsigned int PRIORITY = 1;
 unsigned int CPU_AFFINITY = 99;
@@ -702,7 +703,10 @@ void getCpuInfo (void)
 	temp = IniGetInt (INI_FILE, "CPUSupportsFMA3", 99); 
 	if (temp == 0) CPU_FLAGS &= ~CPU_FMA3; 
 	if (temp == 1) CPU_FLAGS |= CPU_FMA3; 
- 
+	temp = IniGetInt (INI_FILE, "CPUSupportsAVX512F", 99);
+	if (temp == 0) CPU_FLAGS &= ~CPU_AVX512F;
+	if (temp == 1) CPU_FLAGS |= CPU_AVX512F;
+
 SAVE_CPU_FLAGS = CPU_FLAGS;		// Duplicate these values
 
 /* Now get the CPU speed */ 
@@ -736,7 +740,8 @@ void getCpuDescription (
 		if (CPU_FLAGS & CPU_SSE2) strcat (buf, "SSE2, "); 
 		if (CPU_FLAGS & CPU_AVX) strcat (buf, "AVX, "); 
 		if (CPU_FLAGS & CPU_FMA3) strcat (buf, "FMA3, "); 
-		strcpy (buf + strlen (buf) - 2, "\n"); 
+		if (CPU_FLAGS & CPU_AVX512F) strcat(buf, "AVX512F, ");
+		strcpy (buf + strlen (buf) - 2, "\n");
 	} 
 	strcat (buf, "L1 cache size: "); 
 	if (CPU_L1_CACHE_SIZE < 0) strcat (buf, "unknown\n"); 
@@ -864,6 +869,160 @@ void readIniFiles ()
  
 /*---------------------------------------------------------------------------*/
 
+/* IO */
+
+#ifdef NETLLR
+#define io_open(a,b,c) net_open(a,b,c,net)
+#define io_error(fd) fd == NULL
+#define io_read net_read
+#define io_write net_write
+#define io_commit net_commit
+#define io_close net_close
+#define io_reset(a) net_reset(a,net)
+#define io_report net_report
+#elseif NOLLRIOHOOK
+#define iohandle int
+#define io_open _open
+#define io_error(fd) fd < 0
+#define io_read _read
+#define io_write _write
+#define io_commit _commit
+#define io_close _close
+#define io_reset _unlink
+#define io_report(a,b,c,d)
+#else
+typedef struct
+{
+	int fd;
+	char* buffer;
+	unsigned int len;
+	unsigned int pos;
+	unsigned int namelen;
+} iohandle_s;
+typedef iohandle_s* iohandle;
+
+int SAVE_MD5_HASH = FALSE;
+unsigned int SAVE_MD5_SIZE = 0;
+int SAVE_MD5_SUCCESS = FALSE;
+
+#define io_error(fd) fd == NULL
+
+iohandle io_open(const char *filename, int flags, int access)
+{
+	iohandle handle;
+	if (!SAVE_MD5_HASH)
+	{
+		int fd = _open(filename, flags, access);
+		if (fd < 0)
+			return NULL;
+		handle = malloc(sizeof(iohandle_s));
+		handle->fd = fd;
+		handle->buffer = NULL;
+		handle->len = 0;
+		handle->pos = 0;
+		return handle;
+	}
+
+	handle = malloc(sizeof(iohandle_s));
+	handle->fd = -1;
+	handle->namelen = strlen(filename);
+	handle->pos = handle->namelen + 5;
+	handle->len = SAVE_MD5_SIZE + handle->pos;
+	handle->buffer = malloc(handle->len);
+	memcpy(handle->buffer, filename, handle->namelen);
+	strcpy(handle->buffer + handle->namelen, ".md5");
+	SAVE_MD5_SUCCESS = TRUE;
+	return handle;
+}
+
+int io_read(iohandle handle, void *buffer, unsigned int count)
+{
+	if (handle->fd >= 0)
+		return _read(handle->fd, buffer, count);
+	return 0;
+}
+
+int io_write(iohandle handle, const void *buffer, unsigned int count)
+{
+	if (handle->fd >= 0)
+		return _write(handle->fd, buffer, count);
+	if (handle->buffer == NULL || handle->len < handle->pos + count)
+	{
+		unsigned int newlen = handle->len*2;
+		if (newlen < handle->pos + count)
+			newlen = handle->pos + count;
+		char *newbuf = malloc(newlen);
+		if (handle->buffer != NULL && handle->pos > 0)
+			memcpy(newbuf, handle->buffer, handle->pos);
+		if (handle->buffer != NULL)
+			free(handle->buffer);
+		handle->buffer = newbuf;
+		handle->len = newlen;
+	}
+	memcpy(handle->buffer + handle->pos, buffer, count);
+	handle->pos += count;
+	return count;
+}
+
+void writeThrough(char *filename, const void *buffer, unsigned int count)
+{
+#ifdef _WIN32
+	HANDLE hFile = CreateFileA(filename, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_FLAG_WRITE_THROUGH, NULL);
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		SAVE_MD5_SUCCESS = FALSE;
+		return;
+	}
+	DWORD written;
+	if (!WriteFile(hFile, buffer, count, &written, NULL) || written != count)
+		SAVE_MD5_SUCCESS = FALSE;
+	CloseHandle(hFile);
+#else
+	int fd = _open(filename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
+	if (fd < 0)
+	{
+		SAVE_MD5_SUCCESS = FALSE;
+		return;
+	}
+	if (_write(fd, buffer, count) != count)
+		SAVE_MD5_SUCCESS = FALSE;
+	_commit(fd);
+	_close(fd);
+#endif
+}
+
+void io_commit(iohandle handle)
+{
+	if (handle->fd >= 0)
+	{
+		_commit(handle->fd);
+		return;
+	}
+	if (handle->buffer != NULL)
+	{
+		char md5hash[33];
+		md5_raw_input(md5hash, handle->buffer + handle->namelen + 5, handle->pos - handle->namelen - 5);
+		writeThrough(handle->buffer, md5hash, 32);
+		handle->buffer[handle->namelen] = 0;
+		writeThrough(handle->buffer, handle->buffer + handle->namelen + 5, handle->pos - handle->namelen - 5);
+	}
+}
+
+void io_close(iohandle handle)
+{
+	if (handle->fd >= 0)
+		_close(handle->fd);
+	if (handle->buffer != NULL)
+		free(handle->buffer);
+	free(handle);
+}
+
+#define io_reset _unlink
+#define io_report(a,b,c,d)
+#endif
+
+/*---------------------------------------------------------------------------*/
+
 /* Output string to screen or results file */
 
 void OutputSomewhere (
@@ -955,32 +1114,37 @@ void tempFileName (
 
 /* See if the given file exists */
 
-int fileExists (
+int fileExists(
 	char	*filename)
 {
-	int	fd;
-	fd = _open (filename, _O_RDONLY | _O_BINARY);
-	if (fd < 0) return (0);
-	_close (fd);
+	iohandle fd;
+	fd = io_open(filename, _O_RDONLY | _O_BINARY, 0);
+	if (io_error(fd)) return (0);
+	io_close(fd);
 	return (1);
 }
 
 /* Open the results file and write a line to the end of it. */
 
-int writeResults (
-	char	*msg)
+int writeResultsNet(
+	char	*msg,
+	int bNet)
 {
 static	time_t	last_time = 0;
 	time_t	this_time;
-	int	fd;
+	iohandle	fd;
 
 	if (IniGetInt (INI_FILE, "NoLresultFile", 0))
 		return (TRUE);
 
 /* Open file, position to end */
 
-	fd = _open (RESFILE, _O_TEXT | _O_RDWR | _O_CREAT | _O_APPEND, 0666);
-	if (fd < 0) {
+#ifdef NETLLR
+	fd = net_open (RESFILE, _O_TEXT | _O_RDWR | _O_CREAT | _O_APPEND, 0666, bNet ? net : NULL);
+#else
+	fd = io_open (RESFILE, _O_TEXT | _O_RDWR | _O_CREAT | _O_APPEND, 0666);
+#endif
+	if (io_error(fd)) {
 		LogMsg ("Error opening the results file ; see result below :\n");
 		LogMsg (msg);			// Log the unwrited message (Darren Bedwell'request)
 		return (FALSE);
@@ -998,19 +1162,39 @@ static	time_t	last_time = 0;
 		buf[25] = ']';
 		buf[26] = '\n';
 		if (verbose || restarting)
-			writelg = _write (fd, buf, 27);
+			writelg = io_write (fd, buf, 27);
 	}
 
 /* Output the message */
 
-	if (_write (fd, msg, strlen (msg)) < 0) goto fail;
-	_close (fd);
+	if (io_write (fd, msg, strlen (msg)) < 0) goto fail;
+	io_commit(fd);
+	io_close (fd);
 	return (TRUE);
 
 /* On a write error, close file and return error flag */
 
-fail:	_close (fd);
+fail:	io_close (fd);
 	return (FALSE);
+}
+
+int writeResults(
+	char	*msg)
+{
+	return writeResultsNet(msg, FALSE);
+}
+
+int writeError(
+	char* msg)
+{
+	return writeResultsNet(msg, TRUE);
+}
+
+void OutputError(
+	char	*buf)
+{
+	OutputStr(buf);
+	writeError(buf);
 }
 
 
@@ -1019,21 +1203,23 @@ fail:	_close (fd);
 int read_gwnum (
 	gwhandle *gwdata,
 	ghandle *gdata,
-	int	fd,
+    iohandle	fd,
 	gwnum	g,
-	long	*sum)
+	uint32_t *sum)
 {
 	giant	tmp;
-	long	i, len, bytes;
+	uint32_t	i, len, bytes;
 
-	tmp = popg (gdata, ((unsigned long) gwdata->bit_length >> 4) + 10);
-	if (_read (fd, &len, sizeof (long)) != sizeof (long)) return (FALSE);
-	bytes = len * sizeof (long);
-	if (_read (fd, tmp->n, bytes) != bytes) return (FALSE);
+	tmp = popg (gdata, ((uint32_t) gwdata->bit_length >> 5) + 10);
+	if (io_read (fd, &len, sizeof (uint32_t)) != sizeof (uint32_t)) return (FALSE);
+	if (len > ((uint32_t)gwdata->bit_length >> 5) + 5) return (FALSE);
+	bytes = len * sizeof (uint32_t);
+	if (io_read (fd, tmp->n, bytes) != bytes) return (FALSE);
 	tmp->sign = len;
 	*sum += len;
 	for (i = 0; i < len; i++) *sum += tmp->n[i];
-	gianttogw (gwdata, tmp, g);
+	if (g != NULL)
+		gianttogw (gwdata, tmp, g);
 	pushg (gdata, 1);
 	return (TRUE);
 }
@@ -1041,62 +1227,79 @@ int read_gwnum (
 int write_gwnum (
 	gwhandle *gwdata,
 	ghandle *gdata,
-	int	fd,
+    iohandle	fd,
 	gwnum	g,
-	long	*sum)
+	uint32_t *sum)
 {
 	giant	tmp;
-	long	i, len, bytes;
+	uint32_t	i, len, bytes;
 
-	tmp = popg (gdata, ((unsigned long) gwdata->bit_length >> 4) + 10);
+	tmp = popg (gdata, ((uint32_t) gwdata->bit_length >> 5) + 10);
 	gwtogiant (gwdata, g, tmp);
 	len = tmp->sign;
-	if (_write (fd, &len, sizeof (long)) != sizeof (long)) return (FALSE);
-	bytes = len * sizeof (long);
-	if (_write (fd, tmp->n, bytes) != bytes) return (FALSE);
+	if (io_write (fd, &len, sizeof (uint32_t)) != sizeof (uint32_t)) return (FALSE);
+	bytes = len * sizeof (uint32_t);
+	if (io_write (fd, tmp->n, bytes) != bytes) return (FALSE);
 	*sum += len;
 	for (i = 0; i < len; i++) *sum += tmp->n[i];
 	pushg (gdata, 1);
 	return (TRUE);
 }
 
-int read_long (
-	int	fd,
-	unsigned long *val,
-	long	*sum)
+int read_uint32 (
+    iohandle	fd,
+	uint32_t *val,
+	uint32_t	*sum)
 {
-	if (_read (fd, val, sizeof (long)) != sizeof (long)) return (FALSE);
+	if (io_read (fd, val, sizeof (uint32_t)) != sizeof (uint32_t)) return (FALSE);
 	*sum += *val;
 	return (TRUE);
 }
 
-int write_long (
-	int	fd,
-	unsigned long val,
-	long	*sum)
+int write_uint32 (
+    iohandle	fd,
+	uint32_t val,
+	uint32_t	*sum)
 {
-	if (_write (fd, &val, sizeof (long)) != sizeof (long)) return (FALSE);
+	if (io_write (fd, &val, sizeof (uint32_t)) != sizeof (uint32_t)) return (FALSE);
 	*sum += val;
 	return (TRUE);
 }
 
-int read_double (
-	int	fd,
-	double *val,
-	long	*sum)
+int read_long(
+	iohandle	fd,
+	unsigned long *val,
+	uint32_t	*sum)
 {
-	if (_read (fd, val, sizeof (double)) != sizeof (double)) return (FALSE);
-	*sum += (long)floor(*val);
+	*val = 0;
+	return read_uint32(fd, (uint32_t*)val, sum);
+}
+
+int write_long(
+	iohandle	fd,
+	unsigned long val,
+	uint32_t	*sum)
+{
+	return write_uint32(fd, (uint32_t)val, sum);
+}
+
+int read_double (
+    iohandle	fd,
+	double *val,
+	uint32_t	*sum)
+{
+	if (io_read (fd, val, sizeof (double)) != sizeof (double)) return (FALSE);
+	*sum += (uint32_t)floor(*val);
 	return (TRUE);
 }
 
 int write_double (
-	int	fd,
+    iohandle	fd,
 	double val,
-	long	*sum)
+	uint32_t	*sum)
 {
-	if (_write (fd, &val, sizeof (double)) != sizeof (double)) return (FALSE);
-	*sum += (long)floor(val);
+	if (io_write (fd, &val, sizeof (double)) != sizeof (double)) return (FALSE);
+	*sum += (uint32_t)floor(val);
 	return (TRUE);
 }
 
@@ -1108,10 +1311,10 @@ int writeToFile (
 	gwnum	x,
 	gwnum	y)
 {
-	char	newfilename[16];
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	char	newfilename[64];
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 
 	if (nosaving)				// Requested new option... 11/02/11
 		return (TRUE);
@@ -1124,30 +1327,31 @@ int writeToFile (
 
 /* Create the intermediate file */
 
-	fd = _open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
-	if (fd < 0) return (FALSE);
+	fd = io_open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
+	if (io_error(fd)) return (FALSE);
 
 /* Write the file header. */
 
 	magicnum = 0x9f2b3cd4;
-	if (_write (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 	version = 1;
-	if (_write (fd, &version, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 
 /* Write the file data */
 
-	if (! write_long (fd, j, &sum)) goto writeerr;
+	if (! write_uint32 (fd, (uint32_t)j, &sum)) goto writeerr;
 
 /* Write the data values */
 
 	if (! write_gwnum (gwdata, gdata, fd, x, &sum)) goto writeerr;
 	if (y != NULL && ! write_gwnum (gwdata, gdata, fd, y, &sum)) goto writeerr; 
+	if (y == NULL && ! write_uint32(fd, 0, &sum)) goto writeerr;
 
 /* Write the checksum */
 
-	if (_write (fd, &sum, sizeof (long)) != sizeof (long)) goto writeerr;
+	if (io_write (fd, &sum, sizeof (uint32_t)) != sizeof (uint32_t)) goto writeerr;
 
 /* Save the five timers */
 
@@ -1170,8 +1374,8 @@ int writeToFile (
 		}
 	}
 
-	_commit (fd);
-	_close (fd);
+    io_commit (fd);
+    io_close (fd);
 
 /* Now rename the intermediate files */
 
@@ -1184,9 +1388,34 @@ int writeToFile (
 /* An error occured.  Close and delete the current file. */
 
 writeerr:
-	_close (fd);
+	io_close (fd);
 	_unlink (newfilename);
 	return (FALSE);
+}
+
+int writeToFileMD5(
+	gwhandle *gwdata,
+	ghandle *gdata,
+	char	*filename,
+	unsigned long j,
+	gwnum	x,
+	gwnum	y)
+{
+	int retval = TRUE;
+	int two = TWO_BACKUP_FILES;
+	int nosav = nosaving;
+	TWO_BACKUP_FILES = FALSE;
+	nosaving = FALSE;
+
+	SAVE_MD5_HASH = TRUE;
+	SAVE_MD5_SIZE = ((int)gwdata->bit_length >> 3)*(y != NULL ? 2 : 1) + 128;
+	if ((retval = writeToFile(gwdata, gdata, filename, j, x, y)))
+		retval = SAVE_MD5_SUCCESS;
+
+	SAVE_MD5_HASH = FALSE;
+	TWO_BACKUP_FILES = two;
+	nosaving = nosav;
+	return retval;
 }
 
 int readFromFile (
@@ -1197,37 +1426,38 @@ int readFromFile (
 	gwnum	x,
 	gwnum	y)
 {
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+    iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 	char	errmsg[100];
 
 /* Open the intermediate file */
 
-	fd = _open (filename, _O_BINARY | _O_RDONLY);
-	if (fd < 0) goto error;
+	fd = io_open (filename, _O_BINARY | _O_RDONLY, 0);
+	if (io_error(fd)) goto error;
 
 /* Read the file header */
 
-	if (_read (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_read (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto readerr;
 	if (magicnum != 0x9f2b3cd4) goto readerr;
 
-	if (_read (fd, &version, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (version != 1 && version != 2) goto readerr;
 
 /* Read the file data */
 
-	if (! read_long (fd, j, &sum)) goto readerr;
+	*j = 0;
+	if (! read_uint32 (fd, (uint32_t*)j, &sum)) goto readerr;
 
 /* Read the values */
 
 	if (! read_gwnum (gwdata, gdata, fd, x, &sum)) goto readerr;
-	if (y != NULL && ! read_gwnum (gwdata, gdata, fd, y, &sum)) goto readerr; 
+	if (! read_gwnum (gwdata, gdata, fd, y, &sum)) goto readerr;
 
 /* Read and compare the checksum */
 
-	if (_read (fd, &i, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &i, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (i != sum) goto readerr;
 
 /* Read the five timers and their status */
@@ -1237,7 +1467,7 @@ int readFromFile (
 		if (! read_double (fd, &timers[i+5], &sum)) goto readerr;
 	}
 
-	_close (fd);
+    io_close (fd);
 	return (TRUE);
 
 /* An error occured.  Delete the current intermediate file. */
@@ -1246,9 +1476,9 @@ int readFromFile (
 readerr:
 	sprintf (errmsg,"Error reading %s intermediate file.\n", filename);
 	OutputStr (errmsg);
-	_close (fd);
+    io_close (fd);
 error:
-	_unlink (filename);
+	io_reset (filename);
 	return (FALSE);
 }
 
@@ -1264,9 +1494,9 @@ int writeToFileB (
 	gwnum	y)
 {
 	char	newfilename[16];
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 
 	if (nosaving)				// Requested new option... 11/02/11
 		return (TRUE);
@@ -1279,25 +1509,25 @@ int writeToFileB (
 
 /* Create the intermediate file */
 
-	fd = _open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
-	if (fd < 0) return (FALSE);
+	fd = io_open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
+	if (io_error(fd)) return (FALSE);
 
 /* Write the file header. */
 
 	magicnum = 0x9f2b3cd4;
-	if (_write (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 	version = 1;
-	if (_write (fd, &version, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 
 /* Write the file data */
 
-	if (! write_long (fd, j, &sum)) goto writeerr;
-	if (! write_long (fd, B, &sum)) goto writeerr;
-	if (! write_long (fd, nr, &sum)) goto writeerr;
+	if (! write_uint32(fd, (uint32_t)j, &sum)) goto writeerr;
+	if (! write_uint32(fd, (uint32_t)B, &sum)) goto writeerr;
+	if (! write_uint32 (fd, (uint32_t)nr, &sum)) goto writeerr;
 	for (i=0; i<30; i++) {
-		if (! write_long (fd, bpf[i], &sum)) goto writeerr;
+		if (! write_uint32(fd, (uint32_t)bpf[i], &sum)) goto writeerr;
 	}
 
 /* Write the data values */
@@ -1307,7 +1537,7 @@ int writeToFileB (
 
 /* Write the checksum */
 
-	if (_write (fd, &sum, sizeof (long)) != sizeof (long)) goto writeerr;
+	if (io_write (fd, &sum, sizeof (uint32_t)) != sizeof (uint32_t)) goto writeerr;
 
 /* Save the five timers */
 
@@ -1330,8 +1560,8 @@ int writeToFileB (
 		}
 	}
 
-	_commit (fd);
-	_close (fd);
+	io_commit (fd);
+	io_close (fd);
 
 /* Now rename the intermediate files */
 
@@ -1344,7 +1574,7 @@ int writeToFileB (
 /* An error occured.  Close and delete the current file. */
 
 writeerr:
-	_close (fd);
+	io_close (fd);
 	_unlink (newfilename);
 	return (FALSE);
 }
@@ -1360,32 +1590,34 @@ int readFromFileB (
 	gwnum	x,
 	gwnum	y)
 {
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 	char	errmsg[100];
 
 /* Open the intermediate file */
 
-	fd = _open (filename, _O_BINARY | _O_RDONLY);
-	if (fd < 0) goto error;
+	fd = io_open (filename, _O_BINARY | _O_RDONLY, 0);
+	if (io_error(fd)) goto error;
 
 /* Read the file header */
 
-	if (_read (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_read (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto readerr;
 	if (magicnum != 0x9f2b3cd4) goto readerr;
 
-	if (_read (fd, &version, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (version != 1 && version != 2) goto readerr;
 
 /* Read the file data */
 
-	if (! read_long (fd, j, &sum)) goto readerr;
-	if (! read_long (fd, B, &sum)) goto readerr;
-	if (! read_long (fd, nr, &sum)) goto readerr;
+	*j = *B = *nr = 0;
+	if (! read_uint32 (fd, (uint32_t*)j, &sum)) goto readerr;
+	if (! read_uint32 (fd, (uint32_t*)B, &sum)) goto readerr;
+	if (! read_uint32 (fd, (uint32_t*)nr, &sum)) goto readerr;
 	for (i=0; i<30; i++) {
-		if (! read_long (fd, &bpf[i], &sum)) goto readerr;
+		bpf[i] = 0;
+		if (! read_uint32 (fd, (uint32_t*)&bpf[i], &sum)) goto readerr;
 	}
 
 /* Read the values */
@@ -1395,7 +1627,7 @@ int readFromFileB (
 
 /* Read and compare the checksum */
 
-	if (_read (fd, &i, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &i, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (i != sum) goto readerr;
 
 /* Read the five timers and their status */
@@ -1405,7 +1637,7 @@ int readFromFileB (
 		if (! read_double (fd, &timers[i+5], &sum)) goto readerr;
 	}
 
-	_close (fd);
+	io_close (fd);
 	return (TRUE);
 
 /* An error occured.  Delete the current intermediate file. */
@@ -1414,7 +1646,7 @@ int readFromFileB (
 readerr:
 	sprintf (errmsg,"Error reading %s intermediate file.\n", filename);
 	OutputStr (errmsg);
-	_close (fd);
+	io_close (fd);
 error:
 	_unlink (filename);
 	return (FALSE);
@@ -1431,9 +1663,9 @@ int gmwriteToFile (
 	gwnum	y)
 {
 	char	newfilename[16];
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 
 	if (nosaving)				// Requested new option... 11/02/11
 		return (TRUE);
@@ -1446,16 +1678,16 @@ int gmwriteToFile (
 
 /* Create the intermediate file */
 
-	fd = _open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
-	if (fd < 0) return (FALSE);
+	fd = io_open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
+	if (io_error(fd)) return (FALSE);
 
 /* Write the file header. */
 
 	magicnum = 0x9f2b3cd4;
-	if (_write (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 	version = 1;
-	if (_write (fd, &version, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 
 /* Write the file data */
@@ -1471,7 +1703,7 @@ int gmwriteToFile (
 
 /* Write the checksum */
 
-	if (_write (fd, &sum, sizeof (long)) != sizeof (long)) goto writeerr;
+	if (io_write (fd, &sum, sizeof (uint32_t)) != sizeof (uint32_t)) goto writeerr;
 
 /* Save the five timers */
 
@@ -1494,8 +1726,8 @@ int gmwriteToFile (
 		}
 	}
 
-	_commit (fd);
-	_close (fd);
+	io_commit (fd);
+	io_close (fd);
 
 /* Now rename the intermediate files */
 
@@ -1508,7 +1740,7 @@ int gmwriteToFile (
 /* An error occured.  Close and delete the current file. */
 
 writeerr:
-	_close (fd);
+	io_close (fd);
 	_unlink (newfilename);
 	return (FALSE);
 }
@@ -1523,23 +1755,23 @@ int gmreadFromFile (
 	gwnum	x,
 	gwnum	y)
 {
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 	char	errmsg[100];
 
 /* Open the intermediate file */
 
-	fd = _open (filename, _O_BINARY | _O_RDONLY);
-	if (fd < 0) goto error;
+	fd = io_open (filename, _O_BINARY | _O_RDONLY, 0);
+	if (io_error(fd)) goto error;
 
 /* Read the file header */
 
-	if (_read (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_read (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto readerr;
 	if (magicnum != 0x9f2b3cd4) goto readerr;
 
-	if (_read (fd, &version, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (version != 1 && version != 2) goto readerr;
 
 /* Read the file data */
@@ -1555,7 +1787,7 @@ int gmreadFromFile (
 
 /* Read and compare the checksum */
 
-	if (_read (fd, &i, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &i, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (i != sum) goto readerr;
 
 /* Read the five timers and their status */
@@ -1565,7 +1797,7 @@ int gmreadFromFile (
 		if (! read_double (fd, &timers[i+5], &sum)) goto readerr;
 	}
 
-	_close (fd);
+	io_close (fd);
 	return (TRUE);
 
 /* An error occured.  Delete the current intermediate file. */
@@ -1574,7 +1806,7 @@ int gmreadFromFile (
 readerr:
 	sprintf (errmsg,"Error reading %s intermediate file.\n", filename);
 	OutputStr (errmsg);
-	_close (fd);
+	io_close (fd);
 error:
 	_unlink (filename);
 	return (FALSE);
@@ -1594,9 +1826,9 @@ int LwriteToFile (					// To save a Lucas sequence matrix and its Discriminant
 	gwnum	t)
 {
 	char	newfilename[16];
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 
 	if (nosaving)				// Requested new option... 11/02/11
 		return (TRUE);
@@ -1609,16 +1841,16 @@ int LwriteToFile (					// To save a Lucas sequence matrix and its Discriminant
 
 /* Create the intermediate file */
 
-	fd = _open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
-	if (fd < 0) return (FALSE);
+	fd = io_open (newfilename, _O_BINARY|_O_WRONLY|_O_TRUNC|_O_CREAT, 0666);
+	if (io_error(fd)) return (FALSE);
 
 /* Write the file header. */
 
 	magicnum = 0x9f2b3cd4;
-	if (_write (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 	version = 1;
-	if (_write (fd, &version, sizeof (long)) != sizeof (long))
+	if (io_write (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 
 /* Write the file data */
@@ -1639,7 +1871,7 @@ int LwriteToFile (					// To save a Lucas sequence matrix and its Discriminant
 
 /* Write the checksum */
 
-	if (_write (fd, &sum, sizeof (long)) != sizeof (long)) goto writeerr;
+	if (io_write (fd, &sum, sizeof (uint32_t)) != sizeof (uint32_t)) goto writeerr;
 
 /* Save the five timers */
 
@@ -1662,8 +1894,8 @@ int LwriteToFile (					// To save a Lucas sequence matrix and its Discriminant
 		}
 	}
 
-	_commit (fd);
-	_close (fd);
+	io_commit (fd);
+	io_close (fd);
 
 /* Now rename the intermediate files */
 
@@ -1676,7 +1908,7 @@ int LwriteToFile (					// To save a Lucas sequence matrix and its Discriminant
 /* An error occured.  Close and delete the current file. */
 
 writeerr:
-	_close (fd);
+	io_close (fd);
 	_unlink (newfilename);
 	return (FALSE);
 }
@@ -1694,23 +1926,23 @@ int LreadFromFile (						// To restore a Lucas sequence matrix
 	gwnum	z,
 	gwnum	t)
 {
-	int	fd;
-	unsigned long magicnum, version;
-	long	sum = 0, i;
+	iohandle	fd;
+	uint32_t magicnum, version;
+	uint32_t	sum = 0, i;
 	char	errmsg[100];
 
 /* Open the intermediate file */
 
-	fd = _open (filename, _O_BINARY | _O_RDONLY);
-	if (fd < 0) goto error;
+	fd = io_open (filename, _O_BINARY | _O_RDONLY, 0);
+	if (io_error(fd)) goto error;
 
 /* Read the file header */
 
-	if (_read (fd, &magicnum, sizeof (long)) != sizeof (long))
+	if (io_read (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto readerr;
 	if (magicnum != 0x9f2b3cd4) goto readerr;
 
-	if (_read (fd, &version, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (version != 1 && version != 2) goto readerr;
 
 /* Read the file data */
@@ -1731,7 +1963,7 @@ int LreadFromFile (						// To restore a Lucas sequence matrix
 
 /* Read and compare the checksum */
 
-	if (_read (fd, &i, sizeof (long)) != sizeof (long)) goto readerr;
+	if (io_read (fd, &i, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (i != sum) goto readerr;
 
 /* Read the five timers and their status */
@@ -1741,7 +1973,7 @@ int LreadFromFile (						// To restore a Lucas sequence matrix
 		if (! read_double (fd, &timers[i+5], &sum)) goto readerr;
 	}
 
-	_close (fd);
+	io_close (fd);
 	return (TRUE);
 
 /* An error occured.  Delete the current intermediate file. */
@@ -1750,7 +1982,7 @@ int LreadFromFile (						// To restore a Lucas sequence matrix
 readerr:
 	sprintf (errmsg,"Error reading %s intermediate file.\n", filename);
 	OutputStr (errmsg);
-	_close (fd);
+	io_close (fd);
 error:
 	_unlink (filename);
 	return (FALSE);
@@ -3787,656 +4019,6 @@ void	presieve (unsigned long ndp, unsigned long *t, unsigned long *ta, unsigned 
 	*pphi = phi;
 }
 
-#if defined (__linux__) || defined (__FreeBSD__) || defined (__APPLE__)
-
-int aprcltest (int prptest, int verbose)		// Primality test using compiled APRCL code
-{
-	int retcode;
-	mpz_t n1;
-	mpz_init (n1);
-	if (mpz_set_str (n1, greatbuf, 10) != 0)
-		return (6);								// Invalid numeric string...
-	if (prptest)
-		retcode = mpz_strongbpsw_prp (n1);		// Strong BPSW PRP test
-	else
-		retcode = mpz_aprtcle (n1, verbose);	// Prime test possibly with print out.
-	return ((retcode == -1)? 7 : retcode);		// Result code returned (-1 if in error...)
-}
-
-int gmpwftest (char *nstr, char *bstr)			// Wieferich test using APRCL subroutines and gmp library.
-{
-	int retcode = 0, retcode2 = 0;
-	mpz_t n;
-	mpz_t pwn;
-	mpz_t res;
-	mpz_t nm1;
-	mpz_t a;
-
-	if (nstr == NULL)
-		return (10);				// No string argument...
-	if (mpz_init_set_str (n, nstr, 10) != 0) {
-		mpz_clear (n);
-		return (11);				// Invalid numeric string...
-	}
-	if (bstr == NULL) {				// No more parameters
-		mpz_init_set_ui (a, 2);
-	}
-	else if (mpz_init_set_str (a, bstr, 10) != 0) {
-		mpz_clear (n);
-		mpz_clear (a);
-		return (12);				// Invalid numeric string...
-	}
-	mpz_init_set_ui(res, 1);		// Init. res to 1
-	mpz_init_set(nm1, n);
-	mpz_init_set(pwn, n);			// init pwn to n^1 = n
-	mpz_sub_ui(nm1, nm1, 1);		// compute n-1
-	while (mpz_cmp_ui(res, 1) == 0) {
-		mpz_powm(res, a, nm1, pwn);	// Compute a^(n-1) modulo pwn
-		if (mpz_cmp_ui(res, 1) == 0)	// May be positive...
-			retcode2++;
-		mpz_mul (pwn, pwn, n);		// Set pwn to the next power of n.
-	}
-	retcode = retcode2;				// Default return...
-	if (retcode2 >= 2) {			// May be positive...
-		retcode = mpz_aprcl (n);	// Prime test, without any message
-		if (retcode == 0)
-			retcode = -retcode2;	// W-positive, but composite...
-		else if (retcode != -1)		// No APRCL error...
-			retcode = retcode2;		// Wieferich prime found if code >= 2
-	}
-	mpz_clear (n);
-	mpz_clear (a);
-	mpz_clear (res);
-	mpz_clear (nm1);
-	mpz_clear (pwn);
-	return (retcode);
-}
-
-/* Generate temporary file name */
- 
-void tempFilenamew ( 
-	char	*buf, char* c, mpz_t NN) 
-{ 
-	unsigned long remainder;
- 
-	remainder = mpz_fdiv_ui (NN, 19999981);
-	sprintf (buf, "%s%07lu.txt", c, remainder % 10000000); 
-} 
-
-int gmpwfsearch (char *sstart, char *sstop, char *sbase) {
-	int retcode = 0, first, outfd;
-	unsigned long b;
-	unsigned int sverbose = verbose;
-	int resaprcl, stopping;
-	unsigned long m = 0, phi = 1, prevphi = 0, i = 0, j = 0, ndp=9, np, startmod;
-	char lbuf [1000] = {0}, lbuf2 [1000] = {0}, sresume[1000] = {0};
-	char TEMP_FILE[80] = {0};
-	char outputfile[80];
-	mpz_t start;
-	mpz_t stop;
-	mpz_t n;
-	mpz_t sqn;
-	mpz_t res;
-	mpz_t nm1;
-	mpz_t a;
-	unsigned long *t = NULL,*ta = NULL;	// Precrible arrays, dynamically allocated.
-
-	if (mpz_init_set_str (start, sstart, 10) != 0) {
-		sprintf (lbuf, "%s : Invalid numeric string for start...\n", sstart);
-		if (verbose)
-			OutputBoth (lbuf);
-		else
-			OutputStr (lbuf);
-		return (4);			// Invalid numeric string...
-	}
-	if (mpz_init_set_str (stop, sstop, 10) != 0) {
-		sprintf (lbuf, "%s : Invalid numeric string for stop...\n", sstop);
-		if (verbose)
-			OutputBoth (lbuf);
-		else
-			OutputStr (lbuf);
-		return (4);			// Invalid numeric string...
-	}
-	if (mpz_init_set_str (a, sbase, 10) != 0) {
-		sprintf (lbuf, "%s : Invalid numeric string for the base...\n", sbase);
-		if (verbose)
-			OutputBoth (lbuf);
-		else
-			OutputStr (lbuf);
-		return (5);			// Invalid numeric string...
-	}
-	mpz_get_str (lbuf2, 10, a);
-	sprintf (TEMP_FILE, "wf%s_%s.txt", lbuf2, sstart);
-	if (fileExists (TEMP_FILE)) {
-		readFilew (sresume, TEMP_FILE);
-		sprintf (lbuf, "Resuming at n = %s\n", sresume);
-		if (verbose)
-			OutputBoth (lbuf);
-		else
-			OutputStr (lbuf);
-		mpz_set_str (start, sresume, 10);
-	}
-	else {
-		sprintf (lbuf, "Starting Wieferich prime search base %s from n = %s to %s\n", sbase, sstart, sstop);
-		verbose = TRUE;				// To force a time stamp
-		OutputBoth (lbuf);
-		verbose = sverbose;			// Restore the verbose option
-		first = TRUE;
-	}
-	for (np=ndp;np>=3;np--) {
-		for (i=0;i<np;i++) {
-			prevphi = phi;
-			phi *= smallphi[i];
-		}
-		t = (unsigned long*)aligned_malloc((phi+10)*sizeof(unsigned long), 8);
-		ta = (unsigned long*)aligned_malloc((prevphi+10)*sizeof(unsigned long), 8);
-		if ((t==NULL)||(ta==NULL)) {
-			phi = 1;
-			prevphi = 0;
-		}
-		else {
-			break;
-		}
-	}
-	mpz_init (n);
-	mpz_init (sqn);
-	mpz_init (nm1);
-	mpz_init (res);
-	b = mpz_get_ui (a);
-	IniGetString (INI_FILE, "PgenOutputFile", outputfile, 80, NULL);
-	if (mpz_cmp_ui (start, smallprime[np-1]) <= 0) {
-		for (i=0;i<np;i++) {
-			mpz_set_ui (n, smallprime[i]);
-			if (mpz_cmp(n, stop) <= 0) {
-				mpz_set(nm1, n);
-				mpz_set(sqn, n);
-				mpz_mul (sqn, n, n);			// Set sqn to the square of n.
-				mpz_sub_ui(nm1, nm1, 1);
-				mpz_powm(res, a, nm1, sqn);
-				if (mpz_cmp_ui(res, 1) == 0) {	// Positive result!
-					mpz_get_str (lbuf2, 10, n);
-					sprintf (lbuf,"%s is a base %lu Wieferich prime!!\n", lbuf2, b);
-					verbose = TRUE;				// To force a time stamp
-					OutputStr("\033[7m");
-					OutputBoth(lbuf);
-					OutputStr("\033[0m");
-					verbose = sverbose;			// Restore the verbose option
-					outfd = _open (outputfile, _O_TEXT | _O_RDWR | _O_APPEND | _O_CREAT, 0666);
-					if (outfd) {
-						if (first && (IniGetInt (INI_FILE, "PgenLine", 1) == 1)) {	// write the relevant header
-							writelg = _write (outfd, "ABC$a$b\n", 8);
-							first = FALSE;
-						}
-						sprintf (lbuf, "%s %s\n", lbuf2, sbase); 
-						writelg = _write (outfd, lbuf, strlen (lbuf));
-						_close (outfd);
-					}
-					if(IniGetInt(INI_FILE, "StopOnSuccess", 0)) {
-						return (2);
-					}
-				}
-			}
-			else {
-				sprintf (lbuf, "Range %s to %s completed for Wieferich base %s.\n", sstart, sstop, sbase);
-				verbose = TRUE;				// To force a time stamp
-				OutputBoth (lbuf);
-				verbose = sverbose;			// Restore the verbose option
-				return (0);
-			}
-		}
-	}
-	presieve (np, t, ta, &m, &phi);
-	startmod = mpz_fdiv_ui (start, m);
-	mpz_sub_ui (start, start, startmod);
-	for (i = np; i<(np+phi); i++) {
-		if (t[i] >= startmod)
-			break;
-	}
-	mpz_get_str (lbuf2, 10, start);
-	for (i=0; ; i++) {
-		if (i>=(np+phi)) {
-			mpz_get_str (lbuf2, 10, n);
-			writeFilew (lbuf2, TEMP_FILE);		// Make a checkpoint
-			resaprcl = mpz_aprcl (n);			// Prime test, without any message
-			if (resaprcl == 2)
-				sprintf (lbuf, "Tested up to %s which is prime!\n", lbuf2);
-			else
-				sprintf (lbuf, "Tested up to %s\n", lbuf2);
-			if (verbose)
-				OutputBoth (lbuf);
-			else
-				OutputStr (lbuf);
-			i = np;
-			mpz_add_ui (start, start, m);
-		}
-		mpz_set (n, start);
-		mpz_add_ui (n, n, t[i]);
-		if (mpz_cmp(n, stop) <= 0) {
-			for (j=np; j<45;j++) {
-				if (!mpz_fdiv_ui (n, smallprime[j]))
-					break;
-			}
-			if (j<45)
-				continue;
-			stopping = escapeCheck ();
-			if (stopping) {
-				mpz_get_str (lbuf2, 10, n);
-				writeFilew (lbuf2, TEMP_FILE);
-				sprintf (lbuf, "stopping at n = %s\n", lbuf2);
-				if (verbose)
-					OutputBoth (lbuf);
-				else
-					OutputStr (lbuf);
-				return (7);
-			}
-			mpz_set(nm1, n);
-			mpz_sub_ui(nm1, nm1, 1);
-			mpz_powm(res, a, nm1, n);		// res = a^nm1 (mod. n)
-			if (mpz_cmp_ui(res, 1) != 0)
-				continue;					// n is composite...
-			else {							// n may be prime, test further
-				mpz_set(sqn, n);
-				mpz_mul (sqn, n, n);		// Set sqn to the square of n.
-				mpz_powm(res, a, nm1, sqn);	// res = a^nm1 (mod. sqn)
-			}
-			if (mpz_cmp_ui(res, 1) == 0) {	// May be positive...
-				retcode = mpz_aprcl (n);	// Prime test, without any message
-				mpz_get_str (lbuf2, 10, n);
-				if (retcode == -1) {
-					sprintf (lbuf, "An error occurred in the APRCL prime test of %s...\n", lbuf2);
-					if (verbose)
-						OutputBoth (lbuf);
-					else
-						OutputStr (lbuf);
-					retcode = 6;			// The test is in error...
-				}
-				else if (retcode == 0) {
-					retcode = 1;			// W-positive, but composite...
-					sprintf (lbuf, "%s is W-positive, but composite...\n", lbuf2);
-					if (verbose)
-						OutputBoth (lbuf);
-					else
-						OutputStr (lbuf);
-				}
-				else if (retcode == 2) {
-					sprintf (lbuf,"%s is a base %lu Wieferich prime!!\n", lbuf2, b);
-					verbose = TRUE;				// To force a time stamp
-					OutputStr("\033[7m");
-					OutputBoth(lbuf);
-					OutputStr("\033[0m");
-					verbose = sverbose;			// Restore the verbose option
-					outfd = _open (outputfile, _O_TEXT | _O_RDWR | _O_APPEND | _O_CREAT, 0666);
-					if (outfd) {
-						if (first) {		// write the relevant header
-							writelg = _write (outfd, "ABC $a$b\n", 9);
-							first = FALSE;
-						}
-						sprintf (lbuf, "%s %s\n", lbuf2, sgb); 
-						writelg = _write (outfd, lbuf, strlen (lbuf));
-						_close (outfd);
-					}
-					if(IniGetInt(INI_FILE, "StopOnSuccess", 0)) {
-						return (retcode);
-					}
-
-				}
-				else {
-					sprintf (lbuf, "Unexpected result while APRCL testing %s...\n", lbuf2);
-					if (verbose)
-						OutputBoth (lbuf);
-					else
-						OutputStr (lbuf);
-				}
-			}
-			else
-				continue;
-		}
-		else
-			break;
-	}
-	_unlink (TEMP_FILE);
-	sprintf (lbuf, "Range %s to %s completed for Wieferich base %s.\n", sstart, sstop, sbase);
-	verbose = TRUE;				// To force a time stamp
-	OutputBoth (lbuf);
-	verbose = sverbose;			// Restore the verbose option
-	return (retcode);
-}
-
-int gmpSearchWieferich (char *sstart, char *sstop, char *sbase)
-{
-	int retcode;
-	if (sbase == NULL)
-		sbase = "2";
-	retcode = gmpwfsearch (sstart, sstop, sbase);
-	if ((retcode == 7)||(retcode == 11)||(retcode == 3)||(retcode == 4)||(retcode == 5)||(retcode == 10))
-		return (FALSE);
-	if((retcode==2) && IniGetInt(INI_FILE, "StopOnSuccess", 0)) {
-		return (FALSE);
-	}
-	return (TRUE);
-}
-
-#else
-
-	STARTUPINFO aprstinfo;
-	PROCESS_INFORMATION aprprinfo;
-
-int aprcltest (int prptest, int verbose)		// Primality test using external APRCL program as a child process
-{
-	int ofd;
-	unsigned long exitcode, errcode;
-	char errbuf[100];
-	char titre[] = "APRT-CLE Primality Test";
-	char line[100] = {0};
-	ofd = _open ("__pc__", _O_TEXT | _O_RDWR | _O_APPEND | _O_CREAT, 0666);
-	if (ofd) {
-		writelg = _write (ofd, greatbuf, strlen (greatbuf));
-		_close (ofd);
-	}
-	else
-		return (8);				// Could not create the file...
-
-//	Initialisation de la structure wfstinfo avec les seules données requises
-
-	aprstinfo.cb = sizeof (STARTUPINFO);
-	aprstinfo.lpDesktop = NULL;
-	aprstinfo.lpTitle = titre;
-	aprstinfo.dwFlags = STARTF_USESHOWWINDOW;
-	aprstinfo.lpReserved2 = NULL;
-
-	exitcode = STILL_ACTIVE;
-
-// Construire la ligne de commande
-
-	if (prptest)
-		sprintf (line, "aprcl __pc__ prp");
-	else if (verbose == 1)
-		sprintf (line, "aprcl __pc__ prime progress");
-	else if (verbose == 2)
-		sprintf (line, "aprcl __pc__ prime details");
-	else
-		sprintf (line, "aprcl __pc__");
-
-// Creer le processus fils
-
-	if (!CreateProcess (				// Tentative de creation du processus fils
-		"aprcl.exe",
-		line,
-		NULL,
-		NULL,
-		FALSE,
-		0L,
-		NULL,
-		NULL,
-		&aprstinfo,
-		&aprprinfo))
-
-	{
-		errcode = GetLastError ();		// Echec...
-		sprintf (errbuf, "Error %lu while trying to create new process\n", errcode);
-		OutputStr (errbuf);
-		_unlink ("__pc__");
-		return (9);
-	}
-
-	while (exitcode == STILL_ACTIVE) {
-		GetExitCodeProcess(aprprinfo.hProcess, &exitcode);
-	}
-	_unlink ("__pc__");
-	return (exitcode);
-}
-
-	STARTUPINFO wftstinfo;
-	PROCESS_INFORMATION wftprinfo;
-
-int gmpwftest (char *nstr, char *bstr)				// Wieferich test using external WF program as a child process
-{
-	unsigned long exitcode, errcode;
-	char errbuf[100];
-	char titre[] = "GMP-APRCL Wieferich Test";
-	char line[100] = {0};
-//	Initialisation de la structure wfstinfo avec les seules données requises
-
-	wftstinfo.cb = sizeof (STARTUPINFO);
-	wftstinfo.lpDesktop = NULL;
-	wftstinfo.lpTitle = titre;
-	wftstinfo.dwFlags = STARTF_USESHOWWINDOW;
-	wftstinfo.lpReserved2 = NULL;
-
-	exitcode = STILL_ACTIVE;
-
-// Construire la ligne de commande
-
-	if (bstr != NULL)
-		sprintf (line, "tw %s %s", nstr, bstr);
-	else
-		sprintf (line, "tw %s", nstr);
-
-// Creer le processus fils
-
-	if (!CreateProcess (				// Tentative de creation du processus fils
-		"tw.exe",
-		line,
-		NULL,
-		NULL,
-		FALSE,
-		0L,
-		NULL,
-		NULL,
-		&wftstinfo,
-		&wftprinfo))
-
-	{	
-		errcode = GetLastError ();		// Echec...
-		sprintf (errbuf, "Error %lu while trying to create new process\n", errcode);
-		OutputStr (errbuf);
-		return (-1000000000);
-	}
-
-	while (exitcode == STILL_ACTIVE) {
-		GetExitCodeProcess(wftprinfo.hProcess, &exitcode);
-	}
-	return (exitcode);
-}
-
-#ifdef _CONSOLE
-	STARTUPINFO wfstinfo;
-	PROCESS_INFORMATION wfprinfo;
-#else
-	extern	STARTUPINFO wfstinfo;
-	extern	PROCESS_INFORMATION wfprinfo;
-#endif
-
-int gmpwfsearch (char *sstart, char *sstop, char *sbase) {
-
-	unsigned long exitcode, errcode;
-	char errbuf[100];
-	char titre[] = "GMP-APRCL Wieferich Search";
-	char line[100] = {0};
-
-//	Initialisation de la structure wfstinfo avec les seules données requises
-
-	wfstinfo.cb = sizeof (STARTUPINFO);
-	wfstinfo.lpDesktop = NULL;
-	wfstinfo.lpTitle = titre;
-	wfstinfo.dwFlags = STARTF_USESHOWWINDOW;
-	wfstinfo.lpReserved2 = NULL;
-
-	exitcode = STILL_ACTIVE;
-
-// Construire la ligne de commande
-
-	if (sbase != NULL)
-		sprintf (line, "llrwfsrch %s %s %s", sstart, sstop, sbase);
-	else
-		sprintf (line, "llrwfsrch %s %s", sstart, sstop);
-
-// Creer le processus fils
-
-	if (!CreateProcess (				// Tentative de creation du processus fils
-		"llrwfsrch.exe",
-		line,
-		NULL,
-		NULL,
-		FALSE,
-		0L,
-		NULL,
-		NULL,
-		&wfstinfo,
-		&wfprinfo))
-
-	{
-		errcode = GetLastError ();		// Echec...
-		sprintf (errbuf, "Error %lu while trying to create new process\n", errcode);
-		OutputStr (errbuf);
-		return (10);
-	}
-
-	while (exitcode == STILL_ACTIVE) {
-		GetExitCodeProcess(wfprinfo.hProcess, &exitcode);
-	}
-	return (exitcode);
-}
-
-
-int gmpSearchWieferich (char *sstart, char *sstop, char *sbase)
-{
-	int retcode, i = 0, first, outfd;
-	unsigned int sverbose = verbose;
-	char lbuf [1000] = {0}, lbuf2 [1000] = {0};
-	char TEMP_FILE[80] = {0}, RESULT_FILE[80] = {0};
-	char outputfile[80];
-	IniGetString (INI_FILE, "PgenOutputFile", outputfile, 80, NULL);
-	if (sbase == NULL)
-		sbase = "2";
-	sprintf (TEMP_FILE, "wf%s_%s.txt", sbase, sstart);
-	sprintf (RESULT_FILE,"wf%s_results.txt", sbase);
-	if (fileExists (TEMP_FILE)) {
-		readFilew (lbuf2, TEMP_FILE);
-		sprintf (lbuf, "Resuming at n = %s\n", lbuf2);
-		if (verbose)
-			OutputBoth (lbuf);
-		else
-			OutputStr (lbuf);
-	}
-	else {
-		sprintf (lbuf, "Starting Wieferich prime search base %s from n = %s to %s\n", sbase, sstart, sstop);
-		verbose = TRUE;				// To force a time stamp
-		OutputBoth (lbuf);
-		verbose = sverbose;			// Restore the verbose option
-		first = TRUE;
-	}
-	title ("Wieferich prime search in progress.");
-	while (TRUE) {
-		retcode = gmpwfsearch (sstart, sstop, sbase);
-		clearline(100);
-		if (fileExists (TEMP_FILE))
-			readFilew (lbuf2, TEMP_FILE);
-		if (retcode == 8) {
-			sprintf (lbuf, "Tested up to %s\n", lbuf2);
-		}
-		else if (retcode == 9) {
-			sprintf (lbuf, "Tested up to %s which is prime!\n", lbuf2);
-		}
-		else if ((retcode == 7)||(retcode == 11)) {
-			sprintf (lbuf, "Stopping at n = %s\n", lbuf2);
-		}
-		else if (retcode == 2) {
-			readFilew (lbuf2, RESULT_FILE);
-			_unlink (RESULT_FILE);
-			sprintf (lbuf, "%s is a base %s Wieferich prime!!\n", lbuf2, sbase);
-		}
-		else if (retcode == 1) {
-			readFilew (lbuf2, RESULT_FILE);
-			_unlink (RESULT_FILE);
-			sprintf (lbuf, "%s is W-positive, but composite...\n", lbuf2);
-		}
-		else if (retcode == 6) {
-			readFilew (lbuf2, RESULT_FILE);
-			_unlink (RESULT_FILE);
-			sprintf (lbuf, "An error occurred in the APRCL prime test of %s...\n", lbuf2);
-		}
-		else if (retcode == 0) {
-			sprintf (lbuf, "Range %s to %s completed for Wieferich base %s.\n", sstart, sstop, sbase);
-			verbose = TRUE;				// To force a time stamp
-			OutputBoth (lbuf);
-			verbose = sverbose;			// Restore the verbose option
-			_unlink (RESULT_FILE);
-			_unlink (TEMP_FILE);
-			break;
-		}
-		else if ((retcode == 3)||(retcode == 4)||(retcode == 5)) {
-			sprintf (lbuf, "At least one input parameter is invalid or missing...\n");
-		}
-		else if (retcode == 10) {
-			sprintf (lbuf, "Wieferich prime searching not available...\n");
-		}
-		else {
-			readFilew (lbuf2, RESULT_FILE);
-			_unlink (RESULT_FILE);
-			sprintf (lbuf, "Unexpected result while APRCL testing %s...\n", lbuf2);
-		}
-		if (retcode == 2) {
-			clearline(100);
-			verbose = TRUE;				// To force a time stamp
-#ifdef _CONSOLE
-			hConsole = GetStdHandle(STD_OUTPUT_HANDLE);	// Access to Console attributes
-			SetConsoleTextAttribute(hConsole, BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED);
-			OutputBoth(lbuf);
-			SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED);
-#else
-			OutputBoth(lbuf);
-#endif
-			verbose = sverbose;			// Restore the verbose option
-			outfd = _open (outputfile, _O_TEXT | _O_RDWR | _O_APPEND | _O_CREAT, 0666);
-			if (outfd) {
-				if (first && (IniGetInt (INI_FILE, "PgenLine", 1) == 1)) {	// write the relevant header
-					writelg = _write (outfd, "ABC $a$b\n", 9);
-					first = FALSE;
-				}
-				sprintf (lbuf, "%s %s\n", lbuf2, sgb); 
-				writelg = _write (outfd, lbuf, strlen (lbuf));
-				_close (outfd);
-			}
-			clearline(100);
-			if(IniGetInt(INI_FILE, "StopOnSuccess", 0)) {
-				return (FALSE);
-			}
-		}
-		else {
-			if (verbose)
-				OutputBoth (lbuf);
-			else
-				OutputStr (lbuf);
-		}
-		if ((retcode == 7)||(retcode == 11)||(retcode == 3)||(retcode == 4)||(retcode == 5)||(retcode == 10))
-			return (FALSE);
-	}
-	return (TRUE);
-}
-
-#endif
-
-int saprcltest (char *str, int prptest, int verbose) {
-	int i;
-	for (i=0;i<10000;i++) {
-		greatbuf[i] = str[i];
-		if (!str[i])
-			break;
-	}
-	return (aprcltest(prptest, verbose));
-}
-
-int gaprcltest (giant N, int prptest, int verbose) {
-	if (gnbdg (N,10) > 10000)
-		return (-1);						// Number too large...
-	if (N->sign == 1) {						// Trial divisions test is sufficient for this small number...
-		return (isPrime (N->n[0]) ? 12 : 10);
-	}
-	gtoc (N, greatbuf, 10000);
-	return (aprcltest(prptest, verbose));
-}
-
 
 int MakePrimoInput (giant N, char *str) {
 	char buffer[100], primofilename[11];
@@ -5526,6 +5108,9 @@ int commonPRP (
 	if (!IniGetInt(INI_FILE, "Testdiff", 0))	// Unless test of MAXDIFF explicitly required
 		gwdata->MAXDIFF = 1.0E80;				// Diregard MAXDIFF...
 
+	gwfft_description(gwdata, fft_desc);
+	io_report(fft_desc, gwfftlen(gwdata), a, net);
+
 	Nlen = bitlen (N);
 	tmp = popg (gdata, (Nlen >> 4) + 3);
 	tmp2 = popg (gdata, (Nlen >> 4) + 3);
@@ -5593,7 +5178,6 @@ int commonPRP (
 
 /* Output a message about the FFT length */
 
-	gwfft_description (gwdata, fft_desc);
 	sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
 
 	OutputStr (buf);
@@ -5623,7 +5207,7 @@ int commonPRP (
 		if (((bit & 127) == 0) || (bit == 1) || (bit == (lasterr_point-1))) {
 			echk = 1;
 			time (&current_time);
-			saving = ((current_time - start_time > write_time) || (bit == 1) || (bit == (lasterr_point-1)));
+			saving = ((current_time - start_time > write_time) || (bit == 1) || (bit == (lasterr_point-1))) || (bit > Nlen - 128);
 		} else
 			saving = 0;
 
@@ -5686,6 +5270,7 @@ int commonPRP (
 				OutputStr (".  Time per bit: ");
 				divide_timer (0, iters);
 				iters = 0;
+				timers[2] = timer_value(0);
 			}
 			print_timer (0, TIMER_NL | TIMER_OPT_CLR);
 			start_timer (0);
@@ -5704,12 +5289,15 @@ int commonPRP (
 
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
+			end_timer(1);
+			timers[3] = timer_value(1);
 			saving = FALSE;
 			if (! writeToFile (gwdata, gdata, filename, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
 			}	
+			start_timer(1);
 			time (&start_time);
 
 /* If an escape key was hit, write out the results and return */
@@ -5903,6 +5491,1131 @@ error:
 	}
 
 /* Restart */
+
+	if (will_try_larger_fft) {
+		IniWriteInt(INI_FILE, "FFT_Increment", nbfftinc = (IniGetInt(INI_FILE, "FFT_Increment", 0) + 1));
+		if (nbfftinc == maxfftinc)
+			abonroundoff = TRUE;	// Don't accept any more Roundoff error.
+	}
+	return (-1);
+}
+
+struct mt_state {
+	unsigned long mt[624]; /* the array for the state vector */
+	int mti;
+};
+
+void init_genrand(struct mt_state *x, unsigned long s);
+
+unsigned long genrand_int32(struct mt_state *x);
+
+void init_by_array(struct mt_state *x, uint32_t init_key[], int key_length)
+{
+	const int N = 624;
+	int i, j, k;
+	init_genrand(x, 19650218UL);
+	i = 1; j = 0;
+	k = (N>key_length ? N : key_length);
+	for (; k; k--) {
+		x->mt[i] = (x->mt[i] ^ ((x->mt[i-1] ^ (x->mt[i-1] >> 30)) * 1664525UL))
+			+ init_key[j] + j; /* non linear */
+		x->mt[i] &= 0xffffffffUL; /* for WORDSIZE > 32 machines */
+		i++; j++;
+		if (i>=N) { x->mt[0] = x->mt[N-1]; i = 1; }
+		if (j>=key_length) j = 0;
+	}
+	for (k = N-1; k; k--) {
+		x->mt[i] = (x->mt[i] ^ ((x->mt[i-1] ^ (x->mt[i-1] >> 30)) * 1566083941UL))
+			- i; /* non linear */
+		x->mt[i] &= 0xffffffffUL; /* for WORDSIZE > 32 machines */
+		i++;
+		if (i>=N) { x->mt[0] = x->mt[N-1]; i = 1; }
+	}
+
+	x->mt[0] = 0x80000000UL; /* MSB is 1; assuring non-zero initial array */
+}
+
+void grnd(struct mt_state *x, int bits, giant a)
+{
+	for (a->sign = 0; a->sign*32 < bits; a->sign++)
+		a->n[a->sign] = genrand_int32(x);
+	while (a->sign > 0 && a->n[a->sign - 1] == 0)
+		a->sign--;
+}
+
+int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
+{
+	unsigned long bit, i, len, M;
+	char	proofpoint[64], buf[sgkbufsize+256];
+	int	saving;
+	double	reallyminerr = 1.0;
+	double	reallymaxerr = 0.0;
+	double timer1;
+	struct mt_state rnd;
+
+	M = 0;
+
+	start_timer(1);
+	timer1 = timers[1];
+
+	IniGetString(INI_FILE, "RndSeed", buf, sgkbufsize, "0");
+	ctog(buf, tmp);
+	*(double *)&tmp->n[tmp->sign] = timer1;
+	tmp->sign += 2;
+	init_by_array(&rnd, tmp->n, tmp->sign);
+	sprintf(buf, "Random seed: ");
+	gtoc(tmp, buf + strlen(buf), sgkbufsize);
+	OutputStr(buf);
+	OutputStr("\n");
+
+	care = TRUE;
+	dbltogw(gwdata, (double)a, u0);
+	gwsetmulbyconst(gwdata, a);
+	bit = 1;
+	while (bit < klen) {
+		if (bitval(gk, klen - bit - 1)) {
+			gwsetnormroutine(gwdata, 0, 1, 1);
+		}
+		else {
+			gwsetnormroutine(gwdata, 0, 1, 0);
+		}
+		gwsquare_carefully(gwdata, u0);
+		CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
+		bit++;
+	}
+	gwtogiant(gwdata, u0, tmp);
+
+	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+	sprintf(proofpoint + strlen(proofpoint), ".%d", 0);
+	if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, recovery_bit, d, NULL) || 0 + 1 != *recovery_bit)
+	{
+		sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+		OutputError(buf);
+		return -1;
+	}
+	gwtogiant(gwdata, d, tmp2);
+
+	if (gcompg(tmp, tmp2) != 0)
+	{
+		sprintf(buf, "Invalid a^k.\n");
+		OutputError(buf);
+		return -1;
+	}
+
+	if (s == 0)
+	{
+		sprintf(buf, "a^k is correct.\n");
+		OutputBoth(buf);
+		return TRUE;
+	}
+
+	gwsetnormroutine(gwdata, 0, 1, 0);
+
+	tmp->sign = 0;
+	while (isZero(tmp))
+		grnd(&rnd, 64, tmp);
+
+	bit = 1;
+	len = bitlen(tmp);
+	while (bit < len) {
+		if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
+			gwsquare(gwdata, d);
+			care = FALSE;
+		}
+		else {
+			gwsquare_carefully(gwdata, d);
+			care = TRUE;
+		}
+		CHECK_IF_ANY_ERROR(d, (bit), len, 1);
+
+		if (bitval(tmp, len - bit - 1))
+		{
+			if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
+				gwsafemul(gwdata, u0, d);
+				care = FALSE;
+			}
+			else {
+				gwmul_carefully(gwdata, u0, d);
+				care = TRUE;
+			}
+			CHECK_IF_ANY_ERROR(d, (bit), len, 2);
+		}
+		bit++;
+	}
+
+	for (i = 1; i <= s; i++)
+	{
+		//OutputStr("i\n");
+		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+		sprintf(proofpoint + strlen(proofpoint), ".%d", i);
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, recovery_bit, u0, NULL) || (i > 1 && i*M + 1 != *recovery_bit))
+		{
+			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+			OutputError(buf);
+			return -1;
+		}
+		if (i == 1)
+		{
+			M = *recovery_bit - 1;
+			if (M <= 1 || s*M > n)
+			{
+				sprintf(buf, "Incorrect M.\n");
+				OutputError(buf);
+				return -1;
+			}
+		}
+		gwcopy(gwdata, u0, x);
+
+		bit = 1;
+		len = bitlen(tmp);
+		while (bit < len) {
+			if ((bit != lasterr_point) || !maxerr_recovery_mode[3]) {
+				gwsquare(gwdata, x);
+				care = FALSE;
+			}
+			else {
+				gwsquare_carefully(gwdata, x);
+				care = TRUE;
+			}
+			CHECK_IF_ANY_ERROR(x, (bit), len, 3);
+
+			if (bitval(tmp, len - bit - 1))
+			{
+				if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
+					gwsafemul(gwdata, u0, x);
+					care = FALSE;
+				}
+				else {
+					gwmul_carefully(gwdata, u0, x);
+					care = TRUE;
+				}
+				CHECK_IF_ANY_ERROR(x, (bit), len, 4);
+			}
+			bit++;
+		}
+
+		if (i == 1)
+			gwcopy(gwdata, x, check_d);
+		else
+		{
+			if ((i != lasterr_point) || !maxerr_recovery_mode[5]) {
+				gwsafemul(gwdata, x, check_d);
+				care = FALSE;
+			}
+			else {
+				gwmul_carefully(gwdata, x, check_d);
+				care = TRUE;
+			}
+			CHECK_IF_ANY_ERROR(check_d, (i), s, 5);
+		}
+
+		if (i == s)
+			break;
+
+		tmp->sign = 0;
+		while (isZero(tmp))
+			grnd(&rnd, 64, tmp);
+
+		gwcopy(gwdata, u0, x);
+
+		bit = 1;
+		len = bitlen(tmp);
+		while (bit < len) {
+			if ((bit != lasterr_point) || !maxerr_recovery_mode[6]) {
+				gwsquare(gwdata, x);
+				care = FALSE;
+			}
+			else {
+				gwsquare_carefully(gwdata, x);
+				care = TRUE;
+			}
+			CHECK_IF_ANY_ERROR(x, (bit), len, 6);
+
+			if (bitval(tmp, len - bit - 1))
+			{
+				if ((bit != lasterr_point) || !maxerr_recovery_mode[7]) {
+					gwsafemul(gwdata, u0, x);
+					care = FALSE;
+				}
+				else {
+					gwmul_carefully(gwdata, u0, x);
+					care = TRUE;
+				}
+				CHECK_IF_ANY_ERROR(x, (bit), len, 7);
+			}
+			bit++;
+		}
+
+		if ((i != lasterr_point) || !maxerr_recovery_mode[8]) {
+			gwsafemul(gwdata, x, d);
+			care = FALSE;
+		}
+		else {
+			gwmul_carefully(gwdata, x, d);
+			care = TRUE;
+		}
+		CHECK_IF_ANY_ERROR(d, (i), s, 8);
+	}
+
+	gwtogiant(gwdata, check_d, tmp);
+	if (isZero(tmp))
+	{
+		sprintf(buf, "Invalid sequence, the product is zero.\n");
+		OutputError(buf);
+		return -1;
+	}
+
+	gcdg(N, tmp);
+	if (!isone(tmp))
+	{
+		sprintf(buf, "Invalid sequence, a factor is found (%ld digits).\n", gnbdg(tmp, 10));
+		OutputError(buf);
+		return -1;
+	}
+
+	clear_timer(1);
+	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+	sprintf(proofpoint + strlen(proofpoint), ".crt");
+	if (!writeToFileMD5(gwdata, gdata, proofpoint, M, d, NULL)) {
+		sprintf(buf, WRITEFILEERR, proofpoint);
+		OutputError(buf);
+		return FALSE;
+	}
+
+	gwtogiant(gwdata, check_d, tmp);
+	if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
+		sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+	else
+		sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+
+	sprintf(buf, "Certificate RES64: %s  Time : ", res64);
+	start_timer(1);
+	timers[1] = timer1;
+	end_timer(1);
+	write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
+	OutputBoth(buf);
+
+	if (IniGetInt(INI_FILE, "DeletePoints", 0))
+		for (i = 0; i < s; i++)
+		{
+			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+			sprintf(proofpoint + strlen(proofpoint), ".%d", i);
+			_unlink(proofpoint);
+		}
+
+	return TRUE;
+
+error:
+	return FALSE;
+}
+
+int gerbiczPRP(
+	giant gb,
+	unsigned long n,		/* n in k*b^n+c */
+	signed long c,			/* c in k*b^n+c */
+	gwhandle *gwdata,
+	ghandle *gdata,
+	unsigned long a,
+	int* res,
+	char* str)
+{
+	unsigned long bit, bits, ops, bit_ops, iters, total;
+	long    i, j, explen;
+	unsigned long	K, L, L2, M, s, recovery_bit, saved_recovery_bit;
+	gwnum	x;
+	gwnum	d, check_d;
+	gwnum	u0;
+	gwnum   *u;
+	giant	tmp, tmp2, gexp;
+	char	checkpoint[20], recoverypoint[20], proofpoint[64], buf[sgkbufsize + 256], fft_desc[256];
+	long	write_time = DISK_WRITE_TIME * 60;
+	int	echk, saving, stopping;
+	time_t	start_time, current_time;
+	double	reallyminerr = 1.0;
+	double	reallymaxerr = 0.0;
+
+	if (!IniGetInt(INI_FILE, "Testdiff", 0))	// Unless test of MAXDIFF explicitly required
+		gwdata->MAXDIFF = 1.0E80;				// Diregard MAXDIFF...
+
+	gwfft_description(gwdata, fft_desc);
+	io_report(fft_desc, gwfftlen(gwdata), a, net);
+
+	Nlen = bitlen(N);
+	klen = bitlen(gk);
+	total = n;
+
+	tmp = popg(gdata, (Nlen >> 4) + 3);
+	tmp2 = popg(gdata, (Nlen >> 4) + 3);
+	gexp = popg(gdata, (Nlen >> 5) + 3);
+
+	nbdg = gnbdg(N, 10);	// Compute the number of decimal digits of the tested number.
+	*res = TRUE;			/* Assume it is a probable prime */
+
+/* Init filename */
+
+	tempFileName(checkpoint, 'z', N);
+	tempFileName(recoverypoint, 'r', N);
+
+	/* Allocate memory */
+
+	x = gwalloc(gwdata);
+
+	d = gwalloc(gwdata);
+	check_d = gwalloc(gwdata);
+	u0 = gwalloc(gwdata);
+
+	/* Optionally resume from save file and output a message */
+	/* indicating we are resuming a test */
+
+	s = IniGetInt(INI_FILE, "ProofCount", 16);
+	L = (unsigned long)sqrt(total/s);
+	if (total/s < L*L)
+		L--;
+	if (total/s - L*L >= 2*L + 1)
+		L++;
+	if (L == 0)
+		L = 1;
+	L = IniGetInt(INI_FILE, "GerbiczL", L);
+	L2 = L*L;
+	M = IniGetInt(INI_FILE, "AtnashevM", L2);
+
+	K = IniGetInt(INI_FILE, "SlidingWindow", 5);
+	if (gb->sign == 1 && gb->n[0] == 2)
+		K = 1;
+	u = (gwnum*)malloc(sizeof(gwnum) << (K - 1));
+	for (i = 0; i < (1 << (K - 1)); i++)
+		u[i] = gwalloc(gwdata);
+
+	recovery_bit = 0;
+	ops = 0;
+	if (!strcmp(PROOFMODE, "RedoMissing"))
+	{
+		for (bit = 0; bit < total; bit += M)
+		{
+			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+			sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, x, NULL) || bit + 1 != bits)
+				break;
+			gwcopy(gwdata, x, u0);
+			recovery_bit = bits;
+		}
+		if (bit >= total)
+		{
+			pushg(gdata, 3);
+			for (i = 0; i < (1 << (K - 1)); i++)
+				gwfree(gwdata, u[i]);
+			free(u);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			_unlink(checkpoint);
+			_unlink(recoverypoint);
+			*res = FALSE;
+			return TRUE;
+		}
+	}
+	else if (!strcmp(PROOFMODE, "BuildCert"))
+	{
+		stopping = buildCertificate(total, s, a, recoverypoint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
+		{
+			if (stopping == FALSE)
+				goto error;
+			pushg(gdata, 3);
+			for (i = 0; i < (1 << (K - 1)); i++)
+				gwfree(gwdata, u[i]);
+			free(u);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			*res = FALSE;
+			return (stopping == TRUE);
+		}
+	}
+	else if (!strcmp(PROOFMODE, "VerifyCert"))
+	{
+		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+		sprintf(proofpoint + strlen(proofpoint), ".crt");
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		{
+			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+			OutputError(buf);
+
+			pushg(gdata, 3);
+			for (i = 0; i < (1 << (K - 1)); i++)
+				gwfree(gwdata, u[i]);
+			free(u);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			*res = FALSE;
+			return FALSE;
+		}
+		recovery_bit = 1;
+		total = bits;
+		L = (unsigned long)sqrt(total);
+		if (total < L*L)
+			L--;
+		if (total - L*L >= 2*L + 1)
+			L++;
+		if (L == 0)
+			L = 1;
+		L = IniGetInt(INI_FILE, "GerbiczL", L);
+		L2 = L*L;
+		M = IniGetInt(INI_FILE, "AtnashevM", L2);
+		clear_timer(1);
+		checkpoint[0] = 'v';
+	}
+	else if (!strcmp(PROOFMODE, "VerifyRes"))
+	{
+		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+		sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		{
+			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+			OutputError(buf);
+
+			pushg(gdata, 3);
+			for (i = 0; i < (1 << (K - 1)); i++)
+				gwfree(gwdata, u[i]);
+			free(u);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			*res = FALSE;
+			return FALSE;
+		}
+		recovery_bit = bits;
+		clear_timer(1);
+	}
+	else if (!strcmp(PROOFMODE, "SavePoints"))
+	{
+		for (; (long)s >= 0; s--)
+		{
+			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+			sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+			{
+				recovery_bit = bits;
+				break;
+			}
+		}
+		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, d, NULL) && (recovery_bit < bits))
+		{
+			recovery_bit = bits;
+			gwcopy(gwdata, d, u0);
+		}
+	}
+	else if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, u0, NULL))
+	{
+		recovery_bit = bits;
+		ops = (unsigned long)timers[4];
+	}
+	saved_recovery_bit = recovery_bit;
+	bit = recovery_bit;
+
+	if (bit == 0)
+	{
+		care = TRUE;
+		dbltogw(gwdata, (double)a, u0);
+		gwsetmulbyconst(gwdata, a);
+		ops = 1;
+		while (ops < klen) {
+			if (bitval(gk, klen - ops - 1)) {
+				gwsetnormroutine(gwdata, 0, 1, 1);
+			}
+			else {
+				gwsetnormroutine(gwdata, 0, 1, 0);
+			}
+			gwsquare_carefully(gwdata, u0);
+			CHECK_IF_ANY_ERROR(u0, (ops), klen, 5);
+			ops++;
+		}
+
+		recovery_bit = 1;
+		bit = recovery_bit;
+		saved_recovery_bit = recovery_bit;
+		timers[4] = ops;
+		if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, recovery_bit, u0, NULL)) {
+			sprintf(buf, WRITEFILEERR, recoverypoint);
+			OutputBoth(buf);
+		}
+		if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "Save0"))
+		{
+			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+			sprintf(proofpoint + strlen(proofpoint), ".%d", 0);
+			if (!writeToFileMD5(gwdata, gdata, proofpoint, 1, u0, NULL)) {
+				sprintf(buf, WRITEFILEERR, proofpoint);
+				OutputError(buf);
+				goto error;
+			}
+			if (!strcmp(PROOFMODE, "RedoMissing"))
+			{
+				pushg(gdata, 3);
+				for (i = 0; i < (1 << (K - 1)); i++)
+					gwfree(gwdata, u[i]);
+				free(u);
+				gwfree(gwdata, u0);
+				gwfree(gwdata, check_d);
+				gwfree(gwdata, d);
+				gwfree(gwdata, x);
+				return (-1);
+			}
+		}
+	}
+	while ((total - recovery_bit + 1) < L2 && L > 1)
+	{
+		L /= 2;
+		L2 = L*L;
+	}
+	gtog(gb, gexp);
+	power(gexp, L);
+	explen = bitlen(gexp);
+	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, &bits, x, d) && (bits > bit) && (bits < bit + L2))
+	{
+		bit = bits;
+		ops = (unsigned long)timers[4];
+	}
+	else
+	{
+		if (fileExists(checkpoint))
+			io_reset(checkpoint);
+		gwcopy(gwdata, u0, x);
+		gwcopy(gwdata, u0, d);
+	}
+
+	if (bit > 1) {
+		char	fmt_mask[80];
+		double	pct;
+		pct = trunc_percent(bit * 100.0 / total);
+		sprintf(fmt_mask,
+			"Resuming probable prime test of %%s at bit %%ld [%%.%df%%%%]\n",
+			PRECISION);
+		sprintf(buf, fmt_mask, str, bit, pct);
+		OutputStr(buf);
+		if (verbose || restarting)
+			writeError(buf);
+	}
+
+	/* Otherwise, output a message indicating we are starting test */
+
+	else {
+		clear_timers();	// Init. timers
+		if (showdigits)
+			sprintf(buf, "Starting probable prime test of %s (%lu decimal digits)\n", str, nbdg);
+		else
+			sprintf(buf, "Starting probable prime test of %s\n", str);
+		OutputStr(buf);
+		if (verbose || restarting)
+			writeError(buf);
+	}
+
+	/* Get the current time */
+
+	start_timer(0);
+	start_timer(1);
+	time(&start_time);
+
+	/* Output a message about the FFT length */
+
+	if (PROOFMODE[0])
+		sprintf(buf, "Using %s, a = %lu, M = %lu\n", fft_desc, a, M);
+	else
+		sprintf(buf, "Using %s, a = %lu\n", fft_desc, a);
+
+	OutputStr(buf);
+	if (verbose || restarting) {
+		writeError(buf);
+	}
+	ReplaceableLine(1);	/* Remember where replaceable line is */
+
+/* Init the title */
+	title("Fermat PRP test in progress...");
+
+	/* Do the PRP test */
+
+	iters = 0;
+	while (bit <= total) {
+		bit_ops = 0-ops;
+
+		// u[0] = x
+		gwcopy(gwdata, x, u[0]);
+
+		// x = x*x
+		echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
+		gwsetnormroutine(gwdata, 0, echk, 0);
+		gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
+		if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+			gwsquare(gwdata, x);
+			care = FALSE;
+		}
+		else {
+			gwsquare_carefully(gwdata, x);
+			care = TRUE;
+		}
+		CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+		ops++;
+
+		while (K > 1 && (2 << K) > explen)
+			K--;
+
+		// x^3, x^5, ..., x^(2^K - 1)
+		for (i = 1; i < (1 << (K - 1)); i++)
+		{
+			// u[i] = u[i - 1]
+			gwcopy(gwdata, u[i - 1], u[i]);
+
+			// u[i] = u[i]*x
+			echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
+			gwsetnormroutine(gwdata, 0, echk, 0);
+			gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
+			if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+				gwsafemul(gwdata, x, u[i]);
+				care = FALSE;
+			}
+			else {
+				gwmul_carefully(gwdata, x, u[i]);
+				care = TRUE;
+			}
+			CHECK_IF_ANY_ERROR(u[i], (ops), bit, 6);
+			ops++;
+		}
+
+		// x = u[0]
+		gwcopy(gwdata, u[0], x);
+		// x^(b^L)
+		i = explen - 2;
+		while (i >= 0)
+		{
+			if (bitval(gexp, i) == 0)
+			{
+				// x = x*x
+				echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
+				gwsetnormroutine(gwdata, 0, echk, 0);
+				gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
+				if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+					gwsquare(gwdata, x);
+					care = FALSE;
+				}
+				else {
+					gwsquare_carefully(gwdata, x);
+					care = TRUE;
+				}
+				CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+				ops++;
+
+				i--;
+			}
+			else
+			{
+				j = i - K + 1;
+				if (j < 0)
+					j = 0;
+				for (; bitval(gexp, j) == 0; j++);
+				int ui = 0;
+				while (i >= j)
+				{
+					// x = x*x
+					echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
+					gwsetnormroutine(gwdata, 0, echk, 0);
+					gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
+					if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+						gwsquare(gwdata, x);
+						care = FALSE;
+					}
+					else {
+						gwsquare_carefully(gwdata, x);
+						care = TRUE;
+					}
+					CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+					ops++;
+
+					ui <<= 1;
+					ui += bitval(gexp, i) ? 1 : 0;
+					i--;
+				}
+
+				// x = x*u[ui/2]
+				echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
+				gwsetnormroutine(gwdata, 0, echk, 0);
+				gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
+				if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+					gwsafemul(gwdata, u[ui/2], x);
+					care = FALSE;
+				}
+				else {
+					gwmul_carefully(gwdata, u[ui/2], x);
+					care = TRUE;
+				}
+				CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+				ops++;
+			}
+		}
+		bit += L;
+
+		gwstartnextfft(gwdata, 0);
+		care = TRUE;
+		// Gerbicz check
+		if (((bit - recovery_bit)%L2) == 0)
+		{
+			gwcopy(gwdata, d, check_d);
+
+			// d^(b^L)
+			for (i = 1; i < explen; i++)
+			{
+				gwsquare_carefully(gwdata, check_d);
+				CHECK_IF_ANY_ERROR(check_d, (ops), bit, 5);
+				ops++;
+
+				if (bitval(gexp, explen - i - 1) != 0)
+				{
+					gwmul_carefully(gwdata, d, check_d);
+					CHECK_IF_ANY_ERROR(check_d, (ops), bit, 5);
+					ops++;
+				}
+			}
+			// d^(b^L)*u0
+			gwmul_carefully(gwdata, u0, check_d);
+			CHECK_IF_ANY_ERROR(check_d, (ops), bit, 5);
+			ops++;
+
+			// d*x
+			gwmul_carefully(gwdata, x, d);
+			CHECK_IF_ANY_ERROR(d, (ops), bit, 5);
+			ops++;
+
+			// d^(b^L)*u0 = d*x
+			gwsub(gwdata, d, check_d);
+			gwtogiant(gwdata, d, tmp);
+			gwtogiant(gwdata, check_d, tmp2);
+			if (isZero(tmp) || !isZero(tmp2))
+			{
+				clearline(100);
+				sprintf(buf, "Gerbicz check failed at %d.\n", bit - 1);
+				OutputError(buf);
+				IniWriteInt(INI_FILE, "Gerbicz_Error_Count", error_count = IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) + 1);
+				if (error_count > MAX_ERROR_COUNT)
+				{
+					IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+					io_reset(checkpoint);
+					io_reset(recoverypoint);
+				}
+				else
+					io_reset(checkpoint);
+				restarting = TRUE;
+				goto error;
+			}
+			else
+			{
+				//sprintf(buf, "Gerbicz check %d passed.\n", bit - 1);
+				//OutputError(buf);
+				// u0 = d = x
+				gwcopy(gwdata, x, u0);
+				gwcopy(gwdata, x, d);
+				recovery_bit = bit;
+				while ((total - recovery_bit + 1) < L2 && L > 1)
+				{
+					L /= 2;
+					L2 = L*L;
+					gexp->sign = 0;
+				}
+				// b^L
+				if (gexp->sign == 0)
+				{
+					gtog(gb, gexp);
+					power(gexp, L);
+					explen = bitlen(gexp);
+				}
+
+				if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")))
+				{
+					IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+					sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+					if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
+						sprintf(buf, WRITEFILEERR, proofpoint);
+						OutputError(buf);
+						goto error;
+					}
+					saved_recovery_bit = recovery_bit;
+					if (!strcmp(PROOFMODE, "RedoMissing"))
+					{
+						pushg(gdata, 3);
+						for (i = 0; i < (1 << (K - 1)); i++)
+							gwfree(gwdata, u[i]);
+						free(u);
+						gwfree(gwdata, u0);
+						gwfree(gwdata, check_d);
+						gwfree(gwdata, d);
+						gwfree(gwdata, x);
+						return (-1);
+					}
+				}
+			}
+		}
+		else
+		{
+			// d = d*x
+			gwmul_carefully(gwdata, x, d);
+			CHECK_IF_ANY_ERROR(d, (ops), bit, 5);
+			ops++;
+		}
+
+		/* That iteration succeeded, bump counters */
+
+		bit_ops += ops;
+		iters += explen;
+
+		stopping = stopCheck();
+		time(&current_time);
+		saving = (current_time - start_time > write_time) || (bit == L + 1) || ((ops < lasterr_point + bit_ops) && (ops + bit_ops > lasterr_point));
+
+		/* Print a message every so often */
+
+		if (iters > ITER_OUTPUT) {
+			char	fmt_mask[80];
+			double	pct;
+			pct = trunc_percent(bit * 100.0 / total);
+			sprintf(fmt_mask, "%%.%df%%%% of %%ld", PRECISION);
+			sprintf(buf, fmt_mask, pct, n);
+			title(buf);
+			ReplaceableLine(2);	/* Replace line */
+			sprintf(fmt_mask,
+				"%%s, bit: %%ld / %%ld [%%.%df%%%%], %%ld checked",
+				PRECISION);
+			sprintf(buf, fmt_mask, str, bit, total, pct, recovery_bit);
+			OutputStr(buf);
+			if (ERRCHK && bit > 30) {
+				OutputStr(".  Round off: ");
+				sprintf(buf, "%10.10f", reallyminerr);
+				OutputStr(buf);
+				sprintf(buf, " to %10.10f", reallymaxerr);
+				OutputStr(buf);
+			}
+			end_timer(0);
+			if (CUMULATIVE_TIMING) {
+				OutputStr(".  Time thusfar: ");
+			}
+			else {
+				OutputStr(".  Time per bit: ");
+				divide_timer(0, iters*L/explen);
+				iters = 0;
+				timers[2] = timer_value(0);
+			}
+			print_timer(0, TIMER_NL | TIMER_OPT_CLR);
+			start_timer(0);
+		}
+
+		/* Print a results file message every so often */
+
+		if (bit % ITER_OUTPUT_RES == 0 || (NO_GUI && stopping)) {
+			sprintf(buf, "Bit %ld / %ld\n", bit, total);
+			writeResults(buf);
+		}
+
+		/* Write results to a file every DISK_WRITE_TIME minutes */
+		/* On error, retry in 10 minutes (it could be a temporary */
+		/* disk-full situation) */
+
+		if (saving || stopping) {
+			write_time = DISK_WRITE_TIME * 60;
+			end_timer(1);
+			timers[3] = timer_value(1);
+			timers[4] = ops;
+			saving = FALSE;
+			if (saved_recovery_bit < recovery_bit)
+			{
+				if (!writeToFile(gwdata, gdata, recoverypoint, recovery_bit, u0, NULL)) {
+					sprintf(buf, WRITEFILEERR, recoverypoint);
+					OutputBoth(buf);
+					if (write_time > 600) write_time = 600;
+				}
+				else
+				{
+					saved_recovery_bit = recovery_bit;
+					if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
+						IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+				}
+			}
+			if ((saved_recovery_bit == recovery_bit) && !writeToFile(gwdata, gdata, checkpoint, bit, x, d)) {
+				sprintf(buf, WRITEFILEERR, checkpoint);
+				OutputBoth(buf);
+				if (write_time > 600) write_time = 600;
+			}
+			start_timer(1);
+			time(&start_time);
+
+			/* If an escape key was hit, write out the results and return */
+
+			if (stopping) {
+				pushg(gdata, 3);
+				for (i = 0; i < (1 << (K - 1)); i++)
+					gwfree(gwdata, u[i]);
+				free(u);
+				gwfree(gwdata, u0);
+				gwfree(gwdata, check_d);
+				gwfree(gwdata, d);
+				gwfree(gwdata, x);
+				*res = FALSE;
+				return (FALSE);
+			}
+		}
+	}
+
+	/* See if we've found a probable prime.  If not, format a 64-bit residue. */
+	/* Old versions of PRP used a non-standard 64-bit residue, computing */
+	/* 3^N-3 mod N rather than the more standard 3^(N-1) mod N.  Since */
+	/* some projects recorded these non-standard residues, output that */
+	/* residue too.  Note that some really old versions printed out the */
+	/* 32-bit chunks of the non-standard residue in reverse order. */
+
+	clearline(100);
+	gwtogiant(gwdata, x, tmp);
+	if (!strcmp(PROOFMODE, "VerifyCert"))
+	{
+		*res = FALSE;
+		if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
+			sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+		else
+			sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+		sprintf(buf, "Certificate RES64: %s", res64);
+	}
+	else
+	{
+		ultog(1, tmp2);
+		for (i = c - 1; i > 0; i--)
+			ulmulg(a, tmp);
+		for (i = 1 - c; i > 0; i--)
+			ulmulg(a, tmp2);
+		modg(N, tmp);			// External modulus and gwnum's one may be different...
+		modg(N, tmp2);			// External modulus and gwnum's one may be different...
+		if (gcompg(tmp, tmp2) != 0) {
+			*res = FALSE;	/* Not a prime */
+			if (c < 1)
+			{
+				invg(N, tmp2);
+				mulg(tmp2, tmp);
+				modg(N, tmp);
+			}
+			if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
+				sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+			else
+				sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+			sprintf(buf, "%s is not prime.  RES64: %s", str, res64);
+		}
+		else {
+			sprintf(buf, "%s is base %lu-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
+		}
+	}
+
+	/* Print results.  Do not change the format of this line as Jim Fougeron of */
+	/* PFGW fame automates his QA scripts by parsing this line. */
+
+	pushg(gdata, 3);
+	for (i = 0; i < (1 << (K - 1)); i++)
+		gwfree(gwdata, u[i]);
+	free(u);
+	gwfree(gwdata, u0);
+	gwfree(gwdata, check_d);
+	gwfree(gwdata, d);
+	gwfree(gwdata, x);
+
+	/* Update the output file */
+
+	if ((*res && IniGetInt(INI_FILE, "OutputPrimes", 0)) ||
+		(!*res && IniGetInt(INI_FILE, "OutputComposites", 0)))
+		writeResults(buf);
+
+
+#if defined(WIN32) && !defined(_CONSOLE)
+
+	sprintf(buf + strlen(buf), "  Time : ");
+	ReplaceableLine(2);	/* Replace line */
+
+#else
+
+	clearline(100);
+
+	if (*res) {
+#ifdef _CONSOLE
+		hConsole = GetStdHandle(STD_OUTPUT_HANDLE);	// Access to Console attributes
+		SetConsoleTextAttribute(hConsole, BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED);
+		OutputBoth(buf);
+		SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED);
+#else
+		OutputStr("\033[7m");
+		OutputBoth(buf);
+		OutputStr("\033[0m");
+#endif
+	}
+	else
+		OutputBoth(buf);
+
+	sprintf(buf, "  Time : ");
+
+#endif
+
+	/* Output the final timings */
+
+	end_timer(1);
+	write_timer(buf + strlen(buf), 1, TIMER_CLR | TIMER_NL);
+	if ((*res && IniGetInt(INI_FILE, "OutputPrimes", 0)) ||
+		(!*res && IniGetInt(INI_FILE, "OutputComposites", 0)))
+		OutputStr(buf);
+	else
+		OutputBoth(buf);
+
+	/* Cleanup and return */
+
+	_unlink(checkpoint);
+	_unlink(recoverypoint);
+	lasterr_point = 0;
+	return (TRUE);
+
+	/* An error occured, sleep if required, then try restarting at last save point. */
+
+error:
+	pushg(gdata, 3);
+	for (i = 0; i < (1 << (K - 1)); i++)
+		gwfree(gwdata, u[i]);
+	free(u);
+	gwfree(gwdata, u0);
+	gwfree(gwdata, check_d);
+	gwfree(gwdata, d);
+	gwfree(gwdata, x);
+	*res = FALSE;					// To avoid credit mesage...
+
+	if ((abonillsum && gw_test_illegal_sumout(gwdata)) ||
+		(abonmismatch && gw_test_mismatched_sums(gwdata)) ||
+		(abonroundoff && gw_get_maxerr(gwdata) > maxroundoff)) {	// Abort...
+		aborted = TRUE;
+		sprintf(buf, ERRMSG5, checknumber, str);
+		OutputError(buf);
+		_unlink(checkpoint);
+		_unlink(recoverypoint);
+		if (IniGetInt(INI_FILE, "StopOnAbort", 0)) {
+			IniWriteInt(INI_FILE, "PgenLine", IniGetInt(INI_FILE, "PgenLine", 0) + 1);	// Point on the next line
+			return (FALSE);
+		}
+		else
+			return (TRUE);
+	}
+
+	/* Output a message saying we are restarting */
+
+	if (sleep5) OutputError(ERRMSG2);
+	OutputError(ERRMSG3);
+
+	/* Sleep five minutes before restarting */
+
+	if (sleep5 && !SleepFive()) {
+		return (FALSE);
+	}
+
+	/* Restart */
 
 	if (will_try_larger_fft) {
 		IniWriteInt(INI_FILE, "FFT_Increment", nbfftinc = (IniGetInt(INI_FILE, "FFT_Increment", 0) + 1));
@@ -6728,6 +7441,7 @@ error:
 int fastIsPRP (
 	double	k,				/* k in k*b^n+c */
 	unsigned long b,		/* b in k*b^n+c */
+	giant gb,
 	unsigned long n,		/* n in k*b^n+c */
 	signed long c,			/* c in k*b^n+c */
 	char *str,
@@ -6753,7 +7467,9 @@ restart:
 		gwinit (gwdata);
 		gdata = &gwdata->gdata;
  		gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
-		gwset_larger_fftlen_count(gwdata, (char)IniGetInt(INI_FILE, "FFT_Increment", 0)); 
+        if (IniGetInt(INI_FILE, "LargePages", 0))
+            gwset_use_large_pages(gwdata);
+		gwset_larger_fftlen_count(gwdata, (char)IniGetInt(INI_FILE, "FFT_Increment", 0));
 		gwsetmaxmulbyconst (gwdata, a);
 		if (!setupok (gwdata, gwsetup (gwdata, k, b, n, c))) {
 			free (gwdata);
@@ -6771,7 +7487,10 @@ restart:
 
 /* Do the PRP test */
 
-		retval = commonPRP (gwdata, gdata, a, res, str);
+		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE[0])
+			retval = gerbiczPRP(gb, n, c, gwdata, gdata, a, res, str);
+		else
+			retval = commonPRP(gwdata, gdata, a, res, str);
 		gwdone (gwdata);
 	} while (retval == -1);
 
@@ -7115,7 +7834,7 @@ int gwslowIsWieferich (
 	char	*str,		/* string representation of N */
 	int	*res, int shownegs)
 {
-	int	a, retval, resaprcl;
+	int	a, retval;
 	char	buf[sgkbufsize+256]; 
 	gwhandle *gwdata;
 	ghandle *gdata;
@@ -7161,16 +7880,7 @@ restart:
 
 	if (retval) {
 		if (*res) {
-			if (nbdg <= 1000) {
-				resaprcl = gaprcltest (N,0,0);
-				if ((resaprcl == 12) || (resaprcl == 2))
-					sprintf (buf, "%s is a Base %d Wieferich prime!! (%lu decimal digits)\n", str, a, nbdg);
-				else
-					sprintf (buf, "%s is not a Base %d Wieferich prime, because not prime! (%lu decimal digits)\n", str, a, nbdg);
-			}
-			else {
-				sprintf (buf, "%s may be a Base %d Wieferich prime,if prime! (%lu decimal digits)\n", str, a, nbdg);
-			}
+			sprintf (buf, "%s may be a Base %d Wieferich prime,if prime! (%lu decimal digits)\n", str, a, nbdg);
 		}
 		else {
 			sprintf (buf, "%s is not a Base %d Wieferich prime. RES64: %s\n", str, a, res64);
@@ -7191,67 +7901,12 @@ restart:
 	return (retval);
 }
 
-int	gmpisWieferich (
-	char	*str,	// string representation of N
-	char	*base,	// string representation of the base
-	int	*res)
-{
-	char buf [100];
-	int retval = TRUE, retcode;
-	retcode = gmpwftest (str, base);
-	if (base == NULL)
-		base = "2";
-	if (retcode >= 2) {
-		*res = TRUE;
-		sprintf (buf, "%s is a base %s Wieferich prime!! (exp. = %d)\n", str, base, retcode);
-	}
-	else {
-		*res = FALSE;
-		if (retcode == 0)
-			sprintf (buf, "%s is composite.\n", str);
-		else if (retcode == 1)
-			sprintf (buf, "%s is a base %s W-negative...\n", str, base);
-		else if (retcode == -1000000000) {
-			retval = FALSE;
-			sprintf (buf, "Wieferich prime test not available for %s\n", str);
-		}
-		else if (retcode <= -2)
-			sprintf (buf, "%s is a base %s W-positive, but composite... (exp. = %d)\n", str, base, -retcode);
-		else if (retcode == -1) {
-			retval = FALSE;
-			sprintf (buf, "The gmpw test of %s got an error...\n", str);
-		}
-	}
-	if (*res) {
-		clearline (100);
-#if defined (__linux__) || defined (__FreeBSD__) || defined (__APPLE__)
-		OutputStr("\033[7m");
-		OutputBoth (buf);
-		OutputStr("\033[0m");
-#else
-#ifdef _CONSOLE
-		hConsole = GetStdHandle(STD_OUTPUT_HANDLE);	// Access to Console attributes
-		SetConsoleTextAttribute(hConsole, BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED);
-		OutputBoth(buf);
-		SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED);
-		clearline (100);
-#else
-		OutputBoth(buf);
-#endif
-#endif
-		clearline (100);
-	}
-	else
-		if (verbose)
-			OutputBoth (buf);
-		else
-			OutputStr (buf);
-	return (retval);
-}
-
 /* Test if N is a probable prime.  The number N can be of ANY form. */
 
 int slowIsPRP (
+	giant gb,
+	unsigned long n,		/* n in k*b^n+c */
+	signed long c,			/* c in k*b^n+c */
 	char	*str,		/* string representation of N */
 	int	*res)
 {
@@ -7292,7 +7947,10 @@ restart:
 
 /* Do the PRP test */
 
-		retval = commonPRP (gwdata, gdata, a, res, str);
+		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE[0])
+			retval = gerbiczPRP(gb, n, c, gwdata, gdata, a, res, str);
+		else
+			retval = commonPRP(gwdata, gdata, a, res, str);
 		gwdone (gwdata);
 	} while (retval == -1);
 
@@ -7457,15 +8115,15 @@ int isPRPinternal (
 	fcontinue = fcontinue || fileExists (filename);
 
 
-	if (dk >= 1.0) {
-		if (fcontinue || IniGetInt(INI_FILE, "LucasPRPtest", 0)) {
+	if (dk >= 1.0){// && (smallbase == 2 || strcmp(PROOFMODE, "BuildCert"))) {
+		if ((fcontinue || IniGetInt(INI_FILE, "LucasPRPtest", 0)) && !IniGetInt(INI_FILE, "Gerbicz", 0)) {
 			if (!fcontinue)
 				clear_timers ();				// Init. timers
 			retval = fastIsFrobeniusPRP (dk, smallbase, n, incr, str, res);
 		}
 		else {
-			retval = fastIsPRP (dk, smallbase, n, incr, str, res);
-			if (retval && *res && !Fermat_only && !IniGetInt(INI_FILE, "FermatPRPtest", 0))
+			retval = fastIsPRP (dk, smallbase, gb, n, incr, str, res);
+			if (retval && *res && !Fermat_only && !IniGetInt(INI_FILE, "FermatPRPtest", 0) && !IniGetInt(INI_FILE, "Gerbicz", 0))
 				retval = fastIsFrobeniusPRP (dk, smallbase, n, incr, str, res);
 			else if (retval == TRUE)		// If not stopped by user...
 				IniWriteString(INI_FILE, "FFT_Increment", NULL);
@@ -7491,14 +8149,14 @@ int isPRPinternal (
 		retval = TRUE;
 	}
 	else {
-		if (fcontinue || IniGetInt(INI_FILE, "LucasPRPtest", 0)) {
+		if ((fcontinue || IniGetInt(INI_FILE, "LucasPRPtest", 0)) && !IniGetInt(INI_FILE, "Gerbicz", 0)) {
 			if (!fcontinue)
 				clear_timers ();				// Init. timers
 			retval = slowIsFrobeniusPRP (str, res);
 		}
 		else {
-			retval = slowIsPRP (str, res);
-			if (retval && *res && !Fermat_only && !IniGetInt(INI_FILE, "FermatPRPtest", 0))
+			retval = slowIsPRP (gb, n, incr, str, res);
+			if (retval && *res && !Fermat_only && !IniGetInt(INI_FILE, "FermatPRPtest", 0) && !IniGetInt(INI_FILE, "Gerbicz", 0))
 				retval = slowIsFrobeniusPRP (str, res);
 			else if (retval == TRUE)		// If not stopped by user...
 				IniWriteString(INI_FILE, "FFT_Increment", NULL);
@@ -7681,47 +8339,17 @@ int IsPRP (							// General PRP test
 		}
 	}
 
-	if ((nbdg = gnbdg(N, 10)) < 2000) {		// Attempt an APRCL test...
+	if (N->sign == 1) {		// Attempt an APRCL test...
 		start_timer(1);
-		if (nbdg > maxaprcl)
-			resaprcl = gaprcltest (N, 1, 0);	// Make only a Strong BPSW PRP test
-		else if (debug)
-			resaprcl = gaprcltest (N, 0, 2);	// Primality test while showing progress 
-		else
-			resaprcl = gaprcltest (N, 0, 0);	// Primality test silently done
+		resaprcl = (isPrime(N->n[0]) ? 12 : 10);
 		end_timer (1);
 		if (resaprcl == 10) {
-			sprintf (buf,"%s is not prime. (Trial divisions)", str);
+			sprintf(buf, "%s is not prime. (Trial divisions)", str);
 		}
 		else if (resaprcl == 12)
-			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
-		else if (resaprcl == 0)
-			goto PRPCONTINUE;					// Continue the PRP test to get the residue...
-		else if (resaprcl == 1)
-			sprintf (buf,"%s is a probable BPSW prime! (%lu decimal digits, APRCL test) ", str, nbdg);
-		else if (resaprcl == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", str, nbdg);
-		else if (resaprcl == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", str);
-		else if (resaprcl == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto PRPCONTINUE;					// Continue the PRP test to get the residue...
-		}
-		else {
-			if (resaprcl == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", str);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl, str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto PRPCONTINUE;					// Continue the PRP test to get the residue...
-		}
+			sprintf(buf, "%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
+		else
+			goto PRPCONTINUE;
 		*res = ((resaprcl == 1)||(resaprcl == 2)||(resaprcl == 12));
 
 #if defined(WIN32) && !defined(_CONSOLE)
@@ -7849,41 +8477,17 @@ int IsCCP (	// General test for the next prime in a Cunningham chain
 	mulg (gk, N);
 	iaddg (incr, N);
 
-	if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+	if (N->sign == 1) {		// Attempt an APRCL test...
 		start_timer(1);
-			resaprcl = gaprcltest (N, 0, 0);	// Primality test silently done
-		end_timer (1);
+		resaprcl = (isPrime(N->n[0]) ? 12 : 10);
+		end_timer(1);
 		if (resaprcl == 10) {
-			sprintf (buf,"%s is not prime. (Trial divisions)", str);
+			sprintf(buf, "%s is not prime. (Trial divisions)", str);
 		}
 		else if (resaprcl == 12)
-			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
-		else if (resaprcl == 0) {
-			goto CCPCONTINUE;					// Continue the CCP test to get the residue...
-		}
-		else if (resaprcl == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", str, nbdg);
-		else if (resaprcl == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", str);
-		else if (resaprcl == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto CCPCONTINUE;					// Continue the CCP test
-		}
-		else {
-			if (resaprcl == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", str);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl, str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto CCPCONTINUE;					// Continue the CCP test
-		}
+			sprintf(buf, "%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
+		else
+			goto CCPCONTINUE;
 		*res = ((resaprcl == 2)||(resaprcl == 12));
 
 #if defined(WIN32) && !defined(_CONSOLE)
@@ -8212,31 +8816,22 @@ int findgbpf (giant gbase) {		// find all prime factors of a large integer base
 		gtog (gbase, gbpc[i]);
 		divg (b, gbpc[i]);
 		gbpf[i] = newgiant (2*abs(gbase->sign) + 8);
-		if (bitlen(b) <= 40 || (gaprcltest (b, 0, 0) == 2)) {
-			gtog (b, gbpf[i]);			// The cofactor is prime !
-			free (b);
-			return TRUE;
-		}
+
+		gfact (b, gbpf[i], 0, 0, debug);// Try to factorize using R.Crandall code
+		gtog (gbase, gbpc[i]);
+		divg (gbpf[i], gbpc[i]);
+		i++;
+		bpf[i] = vpf[i] = 1;			// To signal a large integer cofactor
+		gbpc[i] = newgiant (2*abs(gbase->sign) + 8);
+		gtog (gbase, gbpc[i]);
+		divg (b, gbpc[i]);
+		gbpf[i] = newgiant (2*abs(gbase->sign) + 8);
+		gtog (b, gbpf[i]);
+		free (b);
+		if ((bitlen(gbpf[i-1]) <= 40) && (bitlen(gbpf[i]) <= 40))
+			return TRUE;				// The two factors are prime !
 		else {
-			gfact (b, gbpf[i], 0, 0, debug);// Try to factorize using R.Crandall code
-			gtog (gbase, gbpc[i]);
-			divg (gbpf[i], gbpc[i]);
-			i++;
-			bpf[i] = vpf[i] = 1;			// To signal a large integer cofactor
-			gbpc[i] = newgiant (2*abs(gbase->sign) + 8);
-			gtog (gbase, gbpc[i]);
-			divg (b, gbpc[i]);
-			gbpf[i] = newgiant (2*abs(gbase->sign) + 8);
-			gtog (b, gbpf[i]);
-			free (b);
-			if ((bitlen(gbpf[i-1]) <= 40) && (bitlen(gbpf[i]) <= 40))
-				return TRUE;				// The two factors are prime !
-			else {
-				if ((gaprcltest (gbpf[i-1], 0, 0) == 2) && (gaprcltest (gbpf[i], 0 ,0) == 2))
-					return TRUE;			// The two factors are prime !
-				else
-					return FALSE;			// The factors must be factorized further...
-			}
+			return FALSE;			// The factors must be factorized further...
 		}
 	}
 }
@@ -8336,7 +8931,7 @@ int Lucasequence (
 		sprintf (buf, fmt_mask, bit, pct);
 		OutputStr (buf);
 		if (verbose || restarting)
-			writeResults (buf);	
+			writeError (buf);	
 		D = P*P - 4;
 	}
 
@@ -8345,7 +8940,7 @@ int Lucasequence (
 	else {
 		OutputStr (buf);
 		if (verbose || restarting)
-			writeResults (buf);	
+			writeError (buf);	
 		D = P*P - 4;
 		bit = 1;
 		dbltogw (gwdata, 2.0, x);			// Initial values
@@ -8366,6 +8961,7 @@ int Lucasequence (
 
 	gwfft_description (gwdata, fft_desc);
 	sprintf (buf, "Using %s, P = %lu\n", fft_desc, P);
+	io_report(fft_desc, gwfftlen(gwdata), P, net);
 
 	OutputStr (buf);
 	if (verbose || restarting) {
@@ -8509,6 +9105,7 @@ int Lucasequence (
 				OutputStr (".  Time per bit: ");
 				divide_timer (0, iters);
 				iters = 0;
+				timers[2] = timer_value(0);
 			}
 			print_timer (0, TIMER_NL | TIMER_OPT_CLR);
 			start_timer (0);
@@ -8528,11 +9125,14 @@ int Lucasequence (
 		if (saving || stopping) {
 			saving = FALSE;
 			write_time = DISK_WRITE_TIME * 60;
+			end_timer(1);
+			timers[3] = timer_value(1);
 			if (! writeToFileB (gwdata, gdata, filename, bit, P, nrestarts, bpf, x, y)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
 			}	
+			start_timer(1);
 			time (&start_time);
 
 /* If an escape key was hit, write out the results and return */
@@ -8828,7 +9428,7 @@ int Lucasequence (
 				if (verbose)
 					writeResults (buf);	
 				frestart = TRUE;
-				_unlink (filename);
+				io_reset(filename);
 				continue;
 //				break;
 			}
@@ -8924,7 +9524,7 @@ error:
 		(abonroundoff && gw_get_maxerr(gwdata) > maxroundoff)) {	// Abort...
 		aborted = TRUE;
 		sprintf (buf, ERRMSG5, checknumber, str);
-		OutputBoth (buf);
+		OutputError (buf);
 		_unlink (filename);
 		if(IniGetInt(INI_FILE, "StopOnAbort", 0)) {
 			IniWriteInt (INI_FILE, "PgenLine", IniGetInt(INI_FILE, "PgenLine", 0) + 1);	// Point on the next line
@@ -8936,8 +9536,8 @@ error:
 
 /* Output a message saying we are restarting */
 
-	if (sleep5) OutputBoth (ERRMSG2);
-	OutputBoth (ERRMSG3);
+	if (sleep5) OutputError(ERRMSG2);
+	OutputError(ERRMSG3);
 
 /* Sleep five minutes before restarting */
 
@@ -8963,8 +9563,8 @@ int plusminustest (
 	unsigned long n, 
 	int incr,
 	unsigned long shift,
-	int	*res) 
-{ 
+	int	*res)
+{
 	char	filename[20], buf[sgkbufsize+256], str[sgkbufsize+256], sgk1[sgkbufsize], fft_desc[256], oldres64[17]; 
 	unsigned long base, bits, explen, iters, bit, a, frestart=FALSE;
 	unsigned long newa, maxrestarts, P, factorized_part = 0;
@@ -9044,41 +9644,17 @@ int plusminustest (
 
 	globalk = dk;
 
-	if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+	if (N->sign == 1) {		// Attempt an APRCL test...
 		start_timer(1);
-			resaprcl = gaprcltest (N, 0, 0);	// Primality test silently done
-		end_timer (1);
+		resaprcl = (isPrime(N->n[0]) ? 12 : 10);
+		end_timer(1);
 		if (resaprcl == 10) {
-			sprintf (buf,"%s is not prime. (Trial divisions)", str);
+			sprintf(buf, "%s is not prime. (Trial divisions)", str);
 		}
 		else if (resaprcl == 12)
-			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
-		else if (resaprcl == 0) {
-			goto PLMCONTINUE;					// Continue the PLM test to get the residue...
-		}
-		else if (resaprcl == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", str, nbdg);
-		else if (resaprcl == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", str);
-		else if (resaprcl == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto PLMCONTINUE;					// Continue the PLM test
-		}
-		else {
-			if (resaprcl == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", str);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl, str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto PLMCONTINUE;					// Continue the PLM test
-		}
+			sprintf(buf, "%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
+		else
+			goto PLMCONTINUE;
 		*res = ((resaprcl == 2)||(resaprcl == 12));
 
 #if defined(WIN32) && !defined(_CONSOLE)
@@ -9119,18 +9695,26 @@ int plusminustest (
 
 PLMCONTINUE:
 
-	if (klen > Nlen) {
-		if ((gformat == ABCDN) || (gformat == ABCDNG))
-		    sprintf(buf, "%s^%lu-1 > %s^%lu, so, only a PRP test is done for %s.\n", sgb, ndiff, sgb, n, str);
-		else
-		    sprintf(buf, "%s > %s^%lu, so, only a PRP test is done for %s.\n", sgk, sgb, n, str);
-	    OutputBoth(buf);
+	if (klen > Nlen || IniGetInt(INI_FILE, "Gerbicz", 0)) {
+		if (klen > Nlen)
+		{
+			if ((gformat == ABCDN) || (gformat == ABCDNG))
+				sprintf(buf, "%s^%lu-1 > %s^%lu, so, only a PRP test is done for %s.\n", sgb, ndiff, sgb, n, str);
+			else
+				sprintf(buf, "%s > %s^%lu, so, only a PRP test is done for %s.\n", sgk, sgb, n, str);
+			OutputError(buf);
+		}
+		if (IniGetInt(INI_FILE, "Gerbicz", 0))
+		{
+			sprintf(buf, "Gerbicz check is requested, switching to PRP.\n");
+			OutputStr(buf);
+		}
 		Nlen = bitlen (N);					// Bit length of N
 		fpart = (1.0-(double)klen/Nlen)*100.0;
 		retval = isPRPinternal (str, dk, gb, n, incr, res);
-		if (res) {
+		if (*res) {
 			sprintf (buf, "(Factorized part = %4.2f%%)\n", fpart);
-			OutputBoth (buf);
+			OutputError(buf);
 			if (nbdg < primolimit)
 				MakePrimoInput (N, str);
 		}
@@ -9234,7 +9818,7 @@ PLMCONTINUE:
 				sprintf (buf, "Cannot compute P to test %s...\nThis is surprising, please, let me know that!!\nMy E-mail is jpenne@free.fr\n", str);
 			else
 				sprintf (buf, "%s has a small factor : %d !!\n", str, abs(Psample));
-			OutputBoth (buf);
+			OutputError(buf);
 			free(gk);
 			free(N);
 			return (TRUE); 
@@ -9254,6 +9838,8 @@ PLMCONTINUE:
 	gwinit (gwdata);
 	gdata = &gwdata->gdata;
  	gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
+	if (IniGetInt(INI_FILE, "LargePages", 0))
+		gwset_use_large_pages(gwdata);
 
 	*res = TRUE;
 
@@ -9341,7 +9927,7 @@ PLMCONTINUE:
 //	Restart with next FFT length if we are too near the limit...
 
 	if (nextifnear && gwnear_fft_limit (gwdata, pcfftlim)) {
-		OutputBoth ("Current FFT beeing too near the limit, next FFT length is forced...\n");
+		OutputError("Current FFT beeing too near the limit, next FFT length is forced...\n");
 		IniWriteInt(INI_FILE, "FFT_Increment", IniGetInt(INI_FILE, "FFT_Increment", 0) + 1);
 		free (M);
 		free (tmp);
@@ -9363,7 +9949,7 @@ PLMCONTINUE:
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a test */
 
-	if (fileExists (filename) && readFromFileB (gwdata, gdata, filename, &bit, &a, &nrestarts, bpf, x, y)) {
+	if (fileExists(filename) && readFromFileB (gwdata, gdata, filename, &bit, &a, &nrestarts, bpf, x, y)) {
 		char	fmt_mask[80];
 		double	pct;
 		pct = trunc_percent (bit * 100.0 / explen);
@@ -9373,7 +9959,7 @@ PLMCONTINUE:
 		sprintf (buf, fmt_mask, incr < 0 ? '+' : '-', abs(incr), str, bit, pct);
 		OutputStr (buf);
 		if (verbose || restarting)
-			writeResults (buf);	
+			writeError (buf);	
 	}
 
 /* Otherwise, output a message indicating we are starting test */
@@ -9399,7 +9985,7 @@ PLMCONTINUE:
 			}
 		OutputStr (buf);
 		if (verbose || restarting)
-			writeResults (buf);	
+			writeError (buf);	
 		}
 		bit = 1;
 		dbltogw (gwdata, (double)a, x);
@@ -9413,8 +9999,9 @@ PLMCONTINUE:
 
 /* Output a message about the FFT length */
 
-	gwfft_description (gwdata, fft_desc);
+	gwfft_description(gwdata, fft_desc);
 	sprintf (buf, "Using %s, a = %lu\n", fft_desc,a);
+	io_report(fft_desc, gwfftlen(gwdata), a, net);
 
 	if (setuponly) {
 		if ((gwdata->FFTLEN != OLDFFTLEN)||debug) {
@@ -9472,7 +10059,7 @@ PLMCONTINUE:
 		if (((bit & 127) == 0) || (bit == 1) || (bit == (lasterr_point-1))) {
 			echk = 1;
 			time (&current_time);
-			saving = ((current_time - start_time > write_time) || (bit == 1) || (bit == (lasterr_point-1)));
+			saving = ((current_time - start_time > write_time) || (bit == 1) || (bit == (lasterr_point-1))) || (bit > explen - 128);
 		} else
 			saving = 0;
 
@@ -9535,6 +10122,7 @@ PLMCONTINUE:
 				OutputStr (".  Time per bit: ");
 				divide_timer (0, iters);
 				iters = 0;
+				timers[2] = timer_value(0);
 			}
 			print_timer (0, TIMER_NL | TIMER_OPT_CLR);
 			start_timer (0);
@@ -9553,12 +10141,15 @@ PLMCONTINUE:
 
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
+			end_timer(1);
+			timers[3] = timer_value(1);
 			saving = FALSE;
 			if (! writeToFileB (gwdata, gdata, filename, bit, a, nrestarts, bpf, x, y)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
 			}	
+			start_timer(1);
 			time (&start_time);
 
 /* If an escape key was hit, write out the results and return */
@@ -9652,7 +10243,7 @@ PLMCONTINUE:
 
 	if (*res) {
 		end_timer (1);
-		_unlink (filename);
+		io_reset(filename);
 		if (!factorized) {
 			gwfree (gwdata, x);
 			gwfree (gwdata, y);
@@ -9663,6 +10254,7 @@ PLMCONTINUE:
 			gwfree (gwdata, x);
 			gwfree (gwdata, y);
 			sprintf (buf, "%s may be prime. Starting Lucas sequence...\n", str);
+			writeError(buf);
 			IniWriteInt(INI_FILE, "PRPdone", 1);
 DoLucas:
 			do {
@@ -9734,7 +10326,7 @@ DoLucas:
 			sprintf (buf, "Computing GCD'S...");
 			title (buf);
 			sprintf (buf, "%s may be prime, trying to compute gcd's\n", str);
-			OutputStr (buf);
+			OutputError (buf);
 			for (j=jmax; j>=jmin; j--) {
 				if (bpf[j] == 0)	// base prime factor already tested
 					continue;
@@ -9913,7 +10505,7 @@ error:
 		(abonroundoff && gw_get_maxerr(gwdata) > maxroundoff)) {	// Abort...
 		aborted = TRUE;
 		sprintf (buf, ERRMSG5, checknumber, str);
-		OutputBoth (buf);
+		OutputError(buf);
 		free (N);
 		free (gk);
 		_unlink (filename);
@@ -9934,8 +10526,8 @@ error:
 
 	/* Output a message saying we are restarting */
 
-	if (sleep5) OutputBoth (ERRMSG2);
-	OutputBoth (ERRMSG3);
+	if (sleep5) OutputError(ERRMSG2);
+	OutputError(ERRMSG3);
 
 /* Sleep five minutes before restarting */
 
@@ -9971,8 +10563,8 @@ int isLLRP (
 	unsigned long binput,		// Lei
 	unsigned long ninput,		// Lei
 	unsigned long shift,
-	int	*res) 
-{ 
+	int	*res)
+{
 	unsigned long iters, index; 
 	unsigned long p, gksize, j, k; 
 	unsigned long mask, last, bit, bits; 
@@ -10098,41 +10690,17 @@ int isLLRP (
 
 	globalk = dk;
 
-	if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+	if (N->sign == 1) {		// Attempt an APRCL test...
 		start_timer(1);
-			resaprcl = gaprcltest (N, 0, 0);	// Primality test silently done
-		end_timer (1);
+		resaprcl = (isPrime(N->n[0]) ? 12 : 10);
+		end_timer(1);
 		if (resaprcl == 10) {
 			sprintf (buf,"%s is not prime. (Trial divisions)", str);
 		}
 		else if (resaprcl == 12)
 			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
-		else if (resaprcl == 0) {
+		else
 			goto LLRCONTINUE;					// Continue the LLR test to get the residue...
-		}
-		else if (resaprcl == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", str, nbdg);
-		else if (resaprcl == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", str);
-		else if (resaprcl == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto LLRCONTINUE;					// Continue the LLR test
-		}
-		else {
-			if (resaprcl == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", str);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl, str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto LLRCONTINUE;					// Continue the LLR test
-		}
 		*res = ((resaprcl == 2)||(resaprcl == 12));
 
 #if defined(WIN32) && !defined(_CONSOLE)
@@ -10174,12 +10742,20 @@ int isLLRP (
 
 LLRCONTINUE:
 
-	if (klen > n) {
-		if ((format == ABCDN) || (format == ABCDNG))
-			sprintf(buf, "2^%lu-1 > 2^%lu, so we can only do a PRP test for %s.\n", ndiff, n, str);
-		else
-			sprintf(buf, "%s > 2^%lu, so we can only do a PRP test for %s.\n", sgk, n, str);
-	    OutputBoth(buf);
+	if (klen > n || IniGetInt(INI_FILE, "Gerbicz", 0)) {
+		if (klen > n)
+		{
+			if ((format == ABCDN) || (format == ABCDNG))
+				sprintf(buf, "2^%lu-1 > 2^%lu, so we can only do a PRP test for %s.\n", ndiff, n, str);
+			else
+				sprintf(buf, "%s > 2^%lu, so we can only do a PRP test for %s.\n", sgk, n, str);
+			OutputError(buf);
+		}
+		if (IniGetInt(INI_FILE, "Gerbicz", 0))
+		{
+			sprintf(buf, "Gerbicz check is requested, switching to PRP.\n");
+			OutputStr(buf);
+		}
 // Lei
 // Lei shadow   retval = isPRPinternal (str, dk, 2, n, -1, res);
 		if ((format == ABCDN) || (format == ABCDNG))
@@ -10192,9 +10768,9 @@ LLRCONTINUE:
 		fpart = (1.0-(double)klen/Nlen)*100.0;
 		retval = isPRPinternal (str, dk, gbinput, ninput, -1, res);
 // Lei end
-		if (res) {
+		if (*res) {
 			sprintf (buf, "(Factorized part = %4.2f%%)\n", fpart);
-			OutputBoth (buf);
+			OutputError(buf);
 			if (nbdg < primolimit)
 				MakePrimoInput (N, str);
 		}
@@ -10257,6 +10833,8 @@ restart:
 	gwinit (gwdata);
 	gdata = &gwdata->gdata;
  	gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
+	if (IniGetInt(INI_FILE, "LargePages", 0))
+		gwset_use_large_pages(gwdata);
 
 	vindex = 1;					// First attempt
 
@@ -10288,7 +10866,7 @@ restart:
 //	Restart with next FFT length if we are too near the limit...
 
 	if (nextifnear && gwnear_fft_limit (gwdata, pcfftlim)) {
-		OutputBoth ("Current FFT beeing too near the limit, next FFT length is forced...\n");
+		OutputError("Current FFT beeing too near the limit, next FFT length is forced...\n");
 		IniWriteInt(INI_FILE, "FFT_Increment", IniGetInt(INI_FILE, "FFT_Increment", 0) + 1);
 		gwdone (gwdata);
 		goto restart;
@@ -10317,7 +10895,7 @@ restart:
 /* Optionally resume from save file and output a message */ 
 /* indicating we are resuming a test */ 
  
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &j, x, NULL)) { 
+	if (fileExists(filename) && readFromFile (gwdata, gdata, filename, &j, x, NULL)) {
 		char	fmt_mask[80]; 
 		double	pct; 
 		pct = trunc_percent (j * 100.0 / n); 
@@ -10327,7 +10905,7 @@ restart:
 		sprintf (buf, fmt_mask, str, j, pct); 
 		OutputStr (buf); 
 		if (verbose || restarting)
-			writeResults (buf);
+			writeError (buf);
 		start_timer (0); 
 		start_timer (1); 
 		time (&start_time); 
@@ -10388,7 +10966,7 @@ restart:
 				sprintf (buf, "Cannot compute V1 to test %s...\nThis is surprising, please, let me know that!!\nMy E-mail is jpenne@free.fr\n", str);
 			else
 				sprintf (buf, "%s has a small factor : %d !!\n", str, abs(v1));
-			OutputBoth (buf); 
+			OutputError(buf);
 			pushg (gdata, 1); 
 			free(gk);
 			free(N);
@@ -10401,7 +10979,7 @@ restart:
 			return(TRUE);
 	    }
 
-	    if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &j, x, y)) { 
+	    if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &j, x, y)) {
 			char	fmt_mask[80]; 
 			double	pct; 
 			pct = trunc_percent (100.0 - j * 100.0 / klen); 
@@ -10413,7 +10991,7 @@ restart:
 			OutputStr ("\n");
 			if (verbose || restarting) {
 				strcat (buf, "\n");
-				writeResults (buf);
+				writeError (buf);
 			}
 			ReplaceableLine (1);	/* Remember where replacable line is */ 
 			start_timer (0); 
@@ -10638,7 +11216,7 @@ restart:
 			if (saving || stopping) { 
 				write_time = DISK_WRITE_TIME * 60; 
 				saving = FALSE;
-				if (! writeToFile (gwdata, gdata, filename, j, x, y)) { 
+				if (! writeToFile (gwdata, gdata, filename, j, x, y)) {
 					sprintf (buf, WRITEFILEERR, filename); 
 					OutputBoth (buf); 
 					if (write_time > 600) write_time = 600; 
@@ -10697,6 +11275,8 @@ MERSENNE:
 		j = 1;
 	} 
 
+	gwfft_description(gwdata, fft_desc);
+	io_report(fft_desc, gwfftlen(gwdata), v1, net);
 
 /* Do the Lucas Lehmer Riesel Prime test */ 
 
@@ -10715,7 +11295,7 @@ MERSENNE:
 		if (((j & 127) == 0) || (j == 1) || (j == (lasterr_point-1))) {
 			echk = 1;
 			time (&current_time);
-			saving = ((current_time - start_time > write_time) || (j == 1) || (j == (lasterr_point-1)));
+			saving = ((current_time - start_time > write_time) || (j == 1) || (j == (lasterr_point-1))) || (j > last - 128);
 		} else
 			saving = 0;
 
@@ -10780,6 +11360,7 @@ MERSENNE:
 				OutputStr (".  Time per iteration : "); 
 				divide_timer (0, iters); 
 				iters = 0; 
+				timers[2] = timer_value(0);
 			} 
 			print_timer (0, TIMER_NL | TIMER_OPT_CLR); 
 			start_timer (0); 
@@ -10798,13 +11379,16 @@ MERSENNE:
  
 		if (saving || stopping) { 
 			write_time = DISK_WRITE_TIME * 60; 
+			end_timer(1);
+			timers[3] = timer_value(1);
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, j, x, NULL)) { 
+			if (! writeToFile (gwdata, gdata, filename, j, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, filename); 
 				OutputBoth (buf); 
 				if (write_time > 600) write_time = 600; 
 			} 
-			time (&start_time); 
+			start_timer(1);
+			time (&start_time);
 
  
 /* If an escape key was hit, write out the results and return */ 
@@ -10920,7 +11504,7 @@ error:
 		(abonroundoff && gw_get_maxerr(gwdata) > maxroundoff)) {	// Abort...
 		aborted = TRUE;
 		sprintf (buf, ERRMSG5, checknumber, str);
-		OutputBoth (buf);
+		OutputError (buf);
 		free(gk);
 		free(N);
 		filename[0] = 'u';
@@ -10943,8 +11527,8 @@ error:
 
 /* Output a message saying we are restarting */ 
  
-	if (sleep5) OutputBoth (ERRMSG2); 
-	OutputBoth (ERRMSG3); 
+	if (sleep5) OutputError(ERRMSG2);
+	OutputError(ERRMSG3);
  
 /* Sleep five minutes before restarting */ 
  
@@ -11049,61 +11633,63 @@ int isProthW (
 	return retval;
 } 
 
-
-int isProthP ( 
-	unsigned long format, 
+int isProthP(
+	unsigned long format,
 	char *sgk,
-        unsigned long b_else,	// Lei
+	unsigned long b_else,	// Lei
 	unsigned long n,
 	unsigned long binput,		// Lei
 	unsigned long ninput,		// Lei
 	unsigned long shift,
-	int	*res) 
-{ 
-	unsigned long iters, gksize; 
-	unsigned long p; 
-	unsigned long bit, bits; 
+	int	*res)
+{
+	unsigned long iters, gksize;
+	unsigned long p;
+	unsigned long bit, bits, total;
 	long	a, retval;
+	unsigned long	L, L2, s, M, recovery_bit, saved_recovery_bit;
 	gwhandle *gwdata;
 	ghandle *gdata;
-	gwnum	x; 
-	giant	tmp, tmp2, gbinput; 
-	char	filename[20], buf[sgkbufsize+256], 
-		str[sgkbufsize+256], fft_desc[256], sgk1[sgkbufsize]; 
-	long	write_time = DISK_WRITE_TIME * 60; 
-	int	resaprcl, echk, saving, stopping, inc = +1; 
-	time_t	start_time, current_time; 
-	double	reallyminerr = 1.0; 
-	double	reallymaxerr = 0.0; 
+	gwnum	x;
+	gwnum	d, check_d;
+	gwnum	u0;
+	giant	tmp, tmp2, gbinput;
+	char	checkpoint[20], recoverypoint[20], proofpoint[20], buf[sgkbufsize+256],
+		str[sgkbufsize+256], fft_desc[256], sgk1[sgkbufsize];
+	long	write_time = DISK_WRITE_TIME * 60;
+	int	resaprcl, echk, saving, stopping, echkGerbicz = +1;
+	time_t	start_time, current_time;
+	double	reallyminerr = 1.0;
+	double	reallymaxerr = 0.0;
 	double dk;
 
-// Lei
+	// Lei
 	double ddk;
 	unsigned long idk = 0;
 	giant gk1;
-// Lei end
+	// Lei end
 
-// Lei
+	// Lei
 	if (b_else != 1) {					// Compute the length of b_else^ninput
-		ddk = (double) b_else;
-		ddk = ninput * log (ddk)/log (2.0);
-		idk = (long) ddk + 1;
+		ddk = (double)b_else;
+		ddk = ninput * log(ddk)/log(2.0);
+		idk = (long)ddk + 1;
 	}
 	else
 		idk = 0;
-// Lei end
+	// Lei end
 	if ((format == ABCDN) || (format == ABCDNG)) {	// Compute gk = gb^(n-m)-1
-		gksize = ndiff*(unsigned long)ceil(log ((double)binput)/log (2.0))+idk;// initial gksize
-		gk = newgiant ((gksize >> 4) + 8);	// Allocate space for gk
-		ultog (binput, gk);
-		power (gk, ndiff);
-		iaddg (-1, gk);
-		sprintf (str, "%lu^%lu-%lu^%lu+1", binput, ninput+ndiff, binput, ninput);
+		gksize = ndiff*(unsigned long)ceil(log((double)binput)/log(2.0))+idk;// initial gksize
+		gk = newgiant((gksize >> 4) + 8);	// Allocate space for gk
+		ultog(binput, gk);
+		power(gk, ndiff);
+		iaddg(-1, gk);
+		sprintf(str, "%lu^%lu-%lu^%lu+1", binput, ninput+ndiff, binput, ninput);
 	}
 	else {
 		gksize = 8*strlen(sgk) + idk;		// J. P. Initial gksize
-		gk = newgiant ((gksize >> 4)  + 8);	// Allocate space for gk
-		ctog (sgk, gk);						// Convert k string to giant
+		gk = newgiant((gksize >> 4)  + 8);	// Allocate space for gk
+		ctog(sgk, gk);						// Convert k string to giant
 	}
 	klen = bitlen(gk);					// Length of initial k multiplier
 	if (klen > 53 || generic) {			// we must use generic reduction
@@ -11115,94 +11701,71 @@ int isProthP (
 			dk += 4294967296.0*(double)gk->n[1];
 	}
 
-// Lei
+	// Lei
 	if (b_else != 1) {					// Compute the big multiplier
-		gk1 = newgiant ((gksize>>1) + 8);
-		ultog (b_else, gk1);
-		power (gk1, ninput);
-		mulg (gk1, gk);
-		free (gk1);
+		gk1 = newgiant((gksize>>1) + 8);
+		ultog(b_else, gk1);
+		power(gk1, ninput);
+		mulg(gk1, gk);
+		free(gk1);
 	}
-// Lei end
+	// Lei end
 
 	if (shift > 0) {
-		gshiftleft (shift, gk);			// Shift k multiplier if requested
-		dk *= (double) (1<<shift);		// Update dk... J.P. 11/02/11
+		gshiftleft(shift, gk);			// Shift k multiplier if requested
+		dk *= (double)(1<<shift);		// Update dk... J.P. 11/02/11
 		if (b_else != 1)
-			strcpy (sgk1, sgk);			// Lei, J.P.
+			strcpy(sgk1, sgk);			// Lei, J.P.
 		else
-			gtoc (gk, sgk1, sgkbufsize);// Updated k string
+			gtoc(gk, sgk1, sgkbufsize);// Updated k string
 	}
 	else
-		strcpy (sgk1, sgk);
+		strcpy(sgk1, sgk);
 
 	if ((format != ABCDN) && (format != ABCDNG)) {
 		if (b_else != 1)	// Lei, J.P.
-			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '+');// Number N to test, as a string
+			sprintf(str, "%s*%lu^%lu%c1", sgk, binput, ninput, '+');// Number N to test, as a string
 		else
-			sprintf (str, "%s*2^%lu%c1", sgk1, n, '+');	// Number N to test, as a string
+			sprintf(str, "%s*2^%lu%c1", sgk1, n, '+');	// Number N to test, as a string
 	}
 
 
 	bits = n + bitlen(gk);				// Bit length of N
-	N =  newgiant ((bits>>4) + 8);		// Allocate memory for N
+	N = newgiant((bits>>4) + 8);		// Allocate memory for N
 
 //	Compute the number we are testing.
-	setone (N);
-	gshiftleft (n, N);
-	mulg (gk, N); 
-	iaddg (1, N);
+	setone(N);
+	gshiftleft(n, N);
+	mulg(gk, N);
+	iaddg(1, N);
 
-//	gk must be odd for the Proth test, so, adjust gk and n if necessary.
+	//	gk must be odd for the Proth test, so, adjust gk and n if necessary.
 
 	while (bitval(gk, 0) == 0) {
-	    gshiftright (1, gk);			// update k as a giant
-	    n++;							// update the exponent
+		gshiftright(1, gk);			// update k as a giant
+		n++;							// update the exponent
 	}
 
-	Nlen = bitlen (N); 
+	Nlen = bitlen(N);
 	klen = bitlen(gk);
+	total = n - 1;
 
-	if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+	if (N->sign == 1) {		// Attempt an APRCL test...
 		start_timer(1);
-			resaprcl = gaprcltest (N, 0, 0);	// Primality test silently done
-		end_timer (1);
+		resaprcl = (isPrime(N->n[0]) ? 12 : 10);
+		end_timer(1);
 		if (resaprcl == 10) {
-			sprintf (buf,"%s is not prime. (Trial divisions)", str);
+			sprintf(buf, "%s is not prime. (Trial divisions)", str);
 		}
 		else if (resaprcl == 12)
-			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
-		else if (resaprcl == 0) {
+			sprintf(buf, "%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg);
+		else
 			goto PRCONTINUE;					// Continue the PROTH test to get the residue...
-		}
-		else if (resaprcl == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", str, nbdg);
-		else if (resaprcl == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", str);
-		else if (resaprcl == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto PRCONTINUE;					// Continue the PROTH test
-		}
-		else {
-			if (resaprcl == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", str);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl, str);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto PRCONTINUE;					// Continue the PROTH test
-		}
 		*res = ((resaprcl == 2)||(resaprcl == 12));
 
 #if defined(WIN32) && !defined(_CONSOLE)
 
-		sprintf (buf+strlen(buf), "  Time : "); 
+		sprintf(buf+strlen(buf), "  Time : ");
 
 #else
 
@@ -11210,30 +11773,30 @@ int isProthP (
 
 		if (*res) {
 #ifdef _CONSOLE
-		hConsole = GetStdHandle(STD_OUTPUT_HANDLE);	// Access to Console attributes
-		SetConsoleTextAttribute(hConsole, BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED);
-		OutputBoth(buf);
-		SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED);
+			hConsole = GetStdHandle(STD_OUTPUT_HANDLE);	// Access to Console attributes
+			SetConsoleTextAttribute(hConsole, BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED);
+			OutputBoth(buf);
+			SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED);
 #else
-		OutputStr("\033[7m");
-		OutputBoth(buf);
-		OutputStr("\033[0m");
+			OutputStr("\033[7m");
+			OutputBoth(buf);
+			OutputStr("\033[0m");
 #endif
 		}
 		else
 			OutputBoth(buf);
 
-		sprintf (buf, "  Time : "); 
+		sprintf(buf, "  Time : ");
 
 #endif
 
-/* Output the final timings for APRCL test */
+		/* Output the final timings for APRCL test */
 
-		write_timer (buf+strlen(buf), 1, TIMER_CLR | TIMER_NL); 
-		OutputBoth (buf);
-		free (gk);
-		free (N);
-		return (TRUE); 
+		write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
+		OutputBoth(buf);
+		free(gk);
+		free(N);
+		return (TRUE);
 	}
 
 PRCONTINUE:
@@ -11242,28 +11805,28 @@ PRCONTINUE:
 
 	if (klen > n) {
 		if ((format == ABCDN) || (format == ABCDNG))
-		    sprintf(buf, "2^%lu-1 > 2^%lu, so we can only do a PRP test for %s.\n", ndiff, n, str);
+			sprintf(buf, "2^%lu-1 > 2^%lu, so we can only do a PRP test for %s.\n", ndiff, n, str);
 		else
-		    sprintf(buf, "%s > 2^%lu, so we can only do a PRP test for %s.\n", sgk, n, str);
-	    OutputBoth(buf);
+			sprintf(buf, "%s > 2^%lu, so we can only do a PRP test for %s.\n", sgk, n, str);
+		OutputError(buf);
 
-// Lei
-// Lei shadow   retval = isPRPinternal (str, dk, 2, n, 1, res);
+		// Lei
+		// Lei shadow   retval = isPRPinternal (str, dk, 2, n, 1, res);
 		if ((format == ABCDN) || (format == ABCDNG))
-			sprintf (str, "%lu^%lu-%lu^%lu+1", binput, ninput+ndiff, binput, ninput);
+			sprintf(str, "%lu^%lu-%lu^%lu+1", binput, ninput+ndiff, binput, ninput);
 		else
-			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '+');     // Number N to test, as a string
-		gbinput = newgiant (2);
+			sprintf(str, "%s*%lu^%lu%c1", sgk, binput, ninput, '+');     // Number N to test, as a string
+		gbinput = newgiant(2);
 		gbinput->sign = 1;
 		gbinput->n[0] = binput;
 		fpart = (1.0-(double)klen/Nlen)*100.0;
-		retval = isPRPinternal (str, dk, gbinput, ninput, 1, res);
-// Lei end
+		retval = isPRPinternal(str, dk, gbinput, ninput, 1, res);
+		// Lei end
 		if (res) {
-			sprintf (buf, "(Factorized part = %4.2f%%)\n", fpart);
-			OutputBoth (buf);
+			sprintf(buf, "(Factorized part = %4.2f%%)\n", fpart);
+			OutputError(buf);
 			if (nbdg < primolimit)
-				MakePrimoInput (N, str);
+				MakePrimoInput(N, str);
 		}
 
 		free(gbinput);
@@ -11272,42 +11835,48 @@ PRCONTINUE:
 		return (retval);
 	}
 
-/* Init the title */ 
- 
-	title ("Proth prime test in progress...");
- 
-/* Compute the base for the Proth algorithm. */
- 
-if ((a = genProthBase(gk, (uint32_t)n)) < 0) {
-	if (a == -1)
-		sprintf (buf, "Cannot compute a to test %s...\nThis is surprising, please, let me know that!!\nMy E-mail is jpenne@free.fr\n", str);
-	else
-		sprintf (buf, "%s has a small factor : %d !!\n", str, abs(a));
-	OutputBoth (buf); 
-	*res = FALSE;
-	free(gk);
-	free(N);
-	return(TRUE);
-}
+	/* Init the title */
 
-	gwdata = (gwhandle*) malloc(sizeof(gwhandle));
+	title("Proth prime test in progress...");
+
+	echkGerbicz = IniGetInt(INI_FILE, "Gerbicz", 0);
+	if (PROOFMODE[0])
+		echkGerbicz = 1;
+
+	/* Compute the base for the Proth algorithm. */
+
+	if ((a = genProthBase(gk, (uint32_t)n)) < 0) {
+		if (a == -1)
+			sprintf(buf, "Cannot compute a to test %s...\nThis is surprising, please, let me know that!!\nMy E-mail is jpenne@free.fr\n", str);
+		else
+			sprintf(buf, "%s has a small factor : %d !!\n", str, abs(a));
+		OutputError(buf);
+		*res = FALSE;
+		free(gk);
+		free(N);
+		return(TRUE);
+	}
+
+	gwdata = (gwhandle*)malloc(sizeof(gwhandle));
 
 restart:
 
-	nbdg = gnbdg (N, 10);	// Compute the number of decimal digits of the tested number.
-	gwinit (gwdata);
+	nbdg = gnbdg(N, 10);	// Compute the number of decimal digits of the tested number.
+	gwinit(gwdata);
 	gdata = &gwdata->gdata;
- 	gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
+	gwset_num_threads(gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
+	if (IniGetInt(INI_FILE, "LargePages", 0))
+		gwset_use_large_pages(gwdata);
 
-	gwsetmaxmulbyconst (gwdata, a);
+	gwsetmaxmulbyconst(gwdata, a);
 
-	p = Nlen; 
+	p = Nlen;
 
-	*res = TRUE;						/* Assume it is a prime */ 
+	*res = TRUE;						/* Assume it is a prime */
 
 	gwset_larger_fftlen_count(gwdata, (char)IniGetInt(INI_FILE, "FFT_Increment", 0));
 	if (dk >= 1.0) {					// Setup the DWT mode
-		if (!setupok (gwdata, gwsetup (gwdata, dk, binput, ninput, +1))) {
+		if (!setupok(gwdata, gwsetup(gwdata, dk, binput, ninput, +1))) {
 			free(gk);
 			free(N);
 			free(gwdata);
@@ -11316,7 +11885,7 @@ restart:
 		}
 	}
 	else {								// Setup the generic mode
-		if (!setupok (gwdata, gwsetup_general_mod_giant (gwdata, N))) {
+		if (!setupok(gwdata, gwsetup_general_mod_giant(gwdata, N))) {
 			free(gk);
 			free(N);
 			free(gwdata);
@@ -11325,47 +11894,272 @@ restart:
 		}
 	}
 
-//	Restart with next FFT length if we are too near the limit...
+	//	Restart with next FFT length if we are too near the limit...
 
-	if (nextifnear && gwnear_fft_limit (gwdata, pcfftlim)) {
-		OutputBoth ("Current FFT beeing too near the limit, next FFT length is forced...\n");
+	if (nextifnear && gwnear_fft_limit(gwdata, pcfftlim)) {
+		OutputError("Current FFT beeing too near the limit, next FFT length is forced...\n");
 		IniWriteInt(INI_FILE, "FFT_Increment", IniGetInt(INI_FILE, "FFT_Increment", 0) + 1);
-		gwdone (gwdata);
+		gwdone(gwdata);
 		goto restart;
 	}
 
-/* Init tmp = (N-1)/2 to compute a^(N-1)/2 mod N */
+	gwfft_description(gwdata, fft_desc);
+	io_report(fft_desc, gwfftlen(gwdata), a, net);
+
+	/* Init tmp = (N-1)/2 to compute a^(N-1)/2 mod N */
 
 	tmp = popg(gdata, (Nlen >> 5) + 4);
 	tmp2 = popg(gdata, (Nlen >> 5) + 4);
-	gtog (N, tmp);
-	iaddg (-1, tmp);
-	gshiftright (1, tmp);
-	Nlen = bitlen (tmp);
+	/*	gtog (N, tmp);
+		iaddg (-1, tmp);
+		gshiftright (1, tmp);
+		Nlen = bitlen (tmp);*/
 
-/* Init filename */
 
-	tempFileName (filename, 'z', N);
+		/* Init filename */
 
-/* Get the current time */
-/* Allocate memory */
+	tempFileName(checkpoint, 'z', N);
+	tempFileName(recoverypoint, 'r', N);
 
-	x = gwalloc (gwdata);
+	/* Get the current time */
+	/* Allocate memory */
 
-/* Optionally resume from save file and output a message */
-/* indicating we are resuming a test */
+	x = gwalloc(gwdata);
 
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, NULL)) {
+	d = gwalloc(gwdata);
+	check_d = gwalloc(gwdata);
+
+	u0 = gwalloc(gwdata);
+
+	/* Optionally resume from save file and output a message */
+	/* indicating we are resuming a test */
+
+	s = IniGetInt(INI_FILE, "ProofCount", 16);
+	L = (unsigned long)sqrt(total/s);
+	if (total/s < L*L)
+		L--;
+	if (total/s - L*L >= 2*L + 1)
+		L++;
+	if (L == 0)
+		L = 1;
+	L = IniGetInt(INI_FILE, "GerbiczL", L);
+	L2 = L*L;
+	M = IniGetInt(INI_FILE, "AtnashevM", L2);
+
+	recovery_bit = 0;
+	if (!strcmp(PROOFMODE, "RedoMissing"))
+	{
+		for (bit = 0; bit < total; bit += M)
+		{
+			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+			sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, x, NULL) || bit + 1 != bits)
+				break;
+			gwcopy(gwdata, x, u0);
+			recovery_bit = bits;
+		}
+		if (bit >= total)
+		{
+			pushg(gdata, 2);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			free(gk);
+			free(N);
+			gwdone(gwdata);
+			free(gwdata);
+			_unlink(checkpoint);
+			_unlink(recoverypoint);
+			*res = FALSE;
+			return TRUE;
+		}
+	}
+	else if (!strcmp(PROOFMODE, "BuildCert"))
+	{
+		stopping = buildCertificate(total, s, a, recoverypoint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
+		{
+			if (stopping == FALSE)
+				goto error;
+			pushg(gdata, 2);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			free(gk);
+			free(N);
+			gwdone(gwdata);
+			free(gwdata);
+			*res = FALSE;
+			return (stopping == TRUE);
+		}
+	}
+	else if (!strcmp(PROOFMODE, "VerifyCert"))
+	{
+		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+		sprintf(proofpoint + strlen(proofpoint), ".crt");
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		{
+			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+			OutputError(buf);
+
+			pushg(gdata, 2);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			free(gk);
+			free(N);
+			gwdone(gwdata);
+			free(gwdata);
+			*res = FALSE;
+			return FALSE;
+		}
+		recovery_bit = 1;
+		total = bits;
+		L = (unsigned long)sqrt(total);
+		if (total < L*L)
+			L--;
+		if (total - L*L >= 2*L + 1)
+			L++;
+		if (L == 0)
+			L = 1;
+		L = IniGetInt(INI_FILE, "GerbiczL", L);
+		L2 = L*L;
+		M = IniGetInt(INI_FILE, "AtnashevM", L2);
+		clear_timer(1);
+		checkpoint[0] = 'v';
+	}
+	else if (!strcmp(PROOFMODE, "VerifyRes"))
+	{
+		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+		sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		{
+			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+			OutputError(buf);
+
+			pushg(gdata, 2);
+			gwfree(gwdata, u0);
+			gwfree(gwdata, check_d);
+			gwfree(gwdata, d);
+			gwfree(gwdata, x);
+			free(gk);
+			free(N);
+			gwdone(gwdata);
+			free(gwdata);
+			*res = FALSE;
+			return FALSE;
+		}
+		recovery_bit = bits;
+		clear_timer(1);
+	}
+	else if (!strcmp(PROOFMODE, "SavePoints"))
+	{
+		for (; (long)s >= 0; s--)
+		{
+			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+			sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+			{
+				recovery_bit = bits;
+				break;
+			}
+		}
+		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, d, NULL) && (recovery_bit < bits))
+		{
+			recovery_bit = bits;
+			gwcopy(gwdata, d, u0);
+		}
+	}
+	else if (echkGerbicz && fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, u0, NULL))
+	{
+		recovery_bit = bits;
+	}
+	saved_recovery_bit = recovery_bit;
+	bit = recovery_bit;
+
+	if (bit == 0)
+	{
+		care = TRUE;
+		dbltogw(gwdata, (double)a, u0);
+		gwsetmulbyconst(gwdata, a);
+		bit = 1;
+		while (bit < klen) {
+			if (bitval(gk, klen - bit - 1)) {
+				gwsetnormroutine(gwdata, 0, 1, 1);
+			}
+			else {
+				gwsetnormroutine(gwdata, 0, 1, 0);
+			}
+			gwsquare_carefully(gwdata, u0);
+			CHECK_IF_ANY_ERROR(u0, (bit), klen, 5);
+			bit++;
+		}
+
+		recovery_bit = 1;
+		bit = recovery_bit;
+		saved_recovery_bit = recovery_bit;
+		lasterr_point = 0;
+		if (echkGerbicz)
+		{
+			if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, 1, u0, NULL)) {
+				sprintf(buf, WRITEFILEERR, recoverypoint);
+				OutputBoth(buf);
+			}
+			if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "Save0"))
+			{
+				IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+				sprintf(proofpoint + strlen(proofpoint), ".%d", 0);
+				if (!writeToFileMD5(gwdata, gdata, proofpoint, 1, u0, NULL)) {
+					sprintf(buf, WRITEFILEERR, proofpoint);
+					OutputError(buf);
+					goto error;
+				}
+				if (!strcmp(PROOFMODE, "RedoMissing"))
+				{
+					pushg(gdata, 2);
+					gwfree(gwdata, u0);
+					gwfree(gwdata, check_d);
+					gwfree(gwdata, d);
+					gwfree(gwdata, x);
+					goto restart;
+				}
+			}
+		}
+	}
+	while (echkGerbicz && (total - recovery_bit + 1) < L2 && L > 1)
+	{
+		L /= 2;
+		L2 = L*L;
+	}
+	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, &bits, x, d) && (!echkGerbicz || ((bits > bit) && (bits < bit + L2))))
+	{
+		bit = bits;
+		if (!echkGerbicz)
+			dbltogw(gwdata, 0, d);
+	}
+	else
+	{
+		if (fileExists(checkpoint))
+			io_reset(checkpoint);
+		gwcopy(gwdata, u0, x);
+		if (echkGerbicz)
+			gwcopy(gwdata, u0, d);
+	}
+
+	if (bit > 1) {
 		char	fmt_mask[80];
 		double	pct;
-		pct = trunc_percent (bit * 100.0 / Nlen);
+		pct = trunc_percent (bit * 100.0 / total);
 		sprintf (fmt_mask,
 			 "Resuming Proth prime test of %%s at bit %%ld [%%.%df%%%%]\n",
 			 PRECISION);
 		sprintf (buf, fmt_mask, str, bit, pct);
 		OutputStr (buf);
 		if (verbose || restarting)
-			writeResults (buf);
+			writeError (buf);
 	}
 
 /* Otherwise, output a message indicating we are starting test */
@@ -11385,10 +12179,8 @@ restart:
 				sprintf (buf, "Starting Proth prime test of %s\n", str);
 			OutputStr (buf);
 			if (verbose || restarting)
-				writeResults (buf);
+				writeError(buf);
 		}
-		bit = 1;
-		dbltogw (gwdata, (double) a, x);
 	}
 
 	start_timer (0);	// Start loop timer.
@@ -11397,8 +12189,10 @@ restart:
 
 /* Output a message about the FFT length and the Proth base. */
 
-	gwfft_description (gwdata, fft_desc);
-	sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
+	if (PROOFMODE[0])
+		sprintf(buf, "Using %s, a = %lu, M = %lu\n", fft_desc, a, M);
+	else
+		sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
 
 	if (!setuponly || (gwdata->FFTLEN != OLDFFTLEN)) {
 		OutputStr (buf);
@@ -11407,41 +12201,43 @@ restart:
 	if (setuponly) {
 		stopping = stopCheck (); 
 		if (gwdata->FFTLEN != OLDFFTLEN) {
-			writeResults (buf);
+			writeError(buf);
 			OLDFFTLEN = gwdata->FFTLEN;
 		}
 		pushg(gdata, 2);
+		gwfree(gwdata, u0);
+		gwfree(gwdata, check_d);
+		gwfree(gwdata, d);
+		gwfree(gwdata, x);
 		free(gk);
 		free(N);
-		gwfree (gwdata, x);
 		gwdone (gwdata);
 		*res = FALSE;
 		free (gwdata);
 		return (!stopping);
 	}
 	else if (verbose || restarting) {
-		writeResults (buf);
+		writeError(buf);
 	}
 	ReplaceableLine (1);	/* Remember where replaceable line is */
 
 /* Do the Proth test */
 
-	gwsetmulbyconst (gwdata, a);
 	iters = 0;
 	if (debug)
 		writeresidue (gwdata, x, N, tmp2, buf, str, 0, BIT);
-	while (bit < Nlen) {
+	while (bit <= total) {
 
 /* Error check the first and last 50 iterations, before writing an */
 /* intermediate file (either user-requested stop or a */
 /* 30 minute interval expired), and every 128th iteration. */
 
 		stopping = stopCheck ();
-		echk = stopping || ERRCHK || (bit <= 50) || (bit >= Nlen-50) || gwnear_fft_limit (gwdata, pcfftlim);
+		echk = stopping || ERRCHK || (bit <= 50) || (bit >= n-50) || gwnear_fft_limit (gwdata, pcfftlim) || ((bit - recovery_bit + 1)%L == 0);
 		if (((bit & 127) == 0) || (bit == 1) || (bit == (lasterr_point-1))) {
 			echk = 1;
 			time (&current_time);
-			saving = ((current_time - start_time > write_time) || (bit == 1) || (bit == (lasterr_point-1)));
+			saving = (current_time - start_time > write_time) || (bit == 1) || (bit == (lasterr_point-1))/* || (bit > n-128)*/;
 		} else
 			saving = 0;
 
@@ -11449,24 +12245,114 @@ restart:
 
 		gwstartnextfft (gwdata, postfft && !debug && !stopping && !saving && bit != lasterr_point && !((interimFiles && (bit+1) % interimFiles == 0)) &&
 			!(interimResidues && ((bit+1) % interimResidues < 2)) && 
-			(bit >= 30) && (bit < Nlen-31) && !maxerr_recovery_mode[6]);
+			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && ((bit - recovery_bit + 1)%L2 != 0));
 
-		if (bitval (tmp, Nlen-bit-1)) {
-			gwsetnormroutine (gwdata, 0, echk, 1);
-		} else {
-			gwsetnormroutine (gwdata, 0, echk, 0);
-		}
-		if ((bit > 30) && (bit < Nlen-30) && ((bit != lasterr_point) || !maxerr_recovery_mode[6])) {
-			gwsquare (gwdata, x);
+		gwsetnormroutine (gwdata, 0, echk, 0);
+
+		//if (bit == 71584 && IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) == 0)
+			//gw_random_number(gwdata, x);
+		if ((bit > 30) && (bit < n-30) && ((bit != lasterr_point) || !maxerr_recovery_mode[6])) {
+			gwsquare(gwdata, x);
 			care = FALSE;
 		}
 		else {
-			gwsquare_carefully (gwdata, x);
+			gwsquare_carefully(gwdata, x);
 			care = TRUE;
 		}
 		if (debug && (bit < 50))
 			writeresidue (gwdata, x, N, tmp2, buf, str, bit, BIT);
-		CHECK_IF_ANY_ERROR (x, (bit), Nlen, 6);
+		CHECK_IF_ANY_ERROR (x, (bit), n, 6);
+
+		if (echkGerbicz && (bit - recovery_bit + 1)%L == 0)
+		{
+			if (((bit - recovery_bit + 1)%L2) == 0/* || bit >= n - 1*/)
+			{
+				care = TRUE;
+				gwcopy(gwdata, d, check_d);
+				gwmul_carefully(gwdata, x, d);
+				CHECK_IF_ANY_ERROR(d, (bit), n, 5);
+				for (unsigned int i = 0; i < L; i++)
+				{
+					gwsquare_carefully(gwdata, check_d);
+					//gwsquare_carefully(gwdata, check_d);
+					//gwmul_carefully(gwdata, check_d, d);
+					CHECK_IF_ANY_ERROR(check_d, (bit), n, 4); // Uh-oh
+				}
+				gwmul_carefully(gwdata, u0, check_d);
+				CHECK_IF_ANY_ERROR(check_d, (bit), n, 3);
+
+				gwsub(gwdata, d, check_d);
+				//gwmul_carefully(gwdata, u0, d);
+				//gwsub(gwdata, x, d);
+				if (gwiszero(gwdata, d) || !gwiszero(gwdata, check_d))
+				//if (!gwiszero(gwdata, d))
+				{
+					clearline(100);
+					sprintf(buf, "Gerbicz check failed at %d.\n", bit);
+					OutputError(buf);
+					IniWriteInt(INI_FILE, "Gerbicz_Error_Count", error_count = IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) + 1);
+					if (error_count > MAX_ERROR_COUNT)
+					{
+						IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+						io_reset(checkpoint);
+						io_reset(recoverypoint);
+					}
+					else
+						io_reset(checkpoint);
+					restarting = TRUE;
+					goto error;
+				}
+				else
+				{
+					//sprintf(buf, "Gerbicz check %d passed.\n", bit);
+					//OutputError(buf);
+					gwcopy(gwdata, x, u0);
+					gwcopy(gwdata, x, d);
+					recovery_bit = bit + 1;
+					while ((total - recovery_bit + 1) < L2 && L > 1)
+					{
+						L /= 2;
+						L2 = L*L;
+					}
+					if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")))
+					{
+						IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+						sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+						if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
+							sprintf(buf, WRITEFILEERR, proofpoint);
+							OutputError(buf);
+							goto error;
+						}
+						saved_recovery_bit = recovery_bit;
+						if (!strcmp(PROOFMODE, "RedoMissing"))
+						{
+							pushg(gdata, 2);
+							gwfree(gwdata, u0);
+							gwfree(gwdata, check_d);
+							gwfree(gwdata, d);
+							gwfree(gwdata, x);
+							goto restart;
+						}
+					}
+				}
+			}
+			else
+			{
+				gwstartnextfft(gwdata, 0);
+				if ((bit != lasterr_point) || !maxerr_recovery_mode[5]) {
+					gwsafemul(gwdata, x, d);
+					care = FALSE;
+				}
+				else {
+					gwmul_carefully(gwdata, x, d);
+					care = TRUE;
+				}
+				CHECK_IF_ANY_ERROR(d, (bit), n, 5);
+			}
+		}
+
+		//if (bit == n-1)
+			//gwtogiant(gwdata, x, tmp);
 
 /* That iteration succeeded, bump counters */
 
@@ -11480,21 +12366,21 @@ restart:
 		if (bit % ITER_OUTPUT == 0) {
 			char	fmt_mask[80];
 			double	pct;
-			pct = trunc_percent (bit * 100.0 / Nlen);
+			pct = trunc_percent (bit * 100.0 / total);
 			if (strlen (str) < 40) {
 				sprintf (fmt_mask, "%%.%df%%%% of %%s", PRECISION);
 				sprintf (buf, fmt_mask, pct, str);
 			}
 			else {
 				sprintf (fmt_mask, "%%.%df%%%% of %%ld", PRECISION);
-				sprintf (buf, fmt_mask, pct, Nlen);
+				sprintf (buf, fmt_mask, pct, total);
 			}
 			title (buf);
 			ReplaceableLine (2);	/* Replace line */
 			sprintf (fmt_mask,
-				 "%%s, bit: %%ld / %%ld [%%.%df%%%%]",
-				 PRECISION);
-			sprintf (buf, fmt_mask, str, bit, Nlen, pct);
+				 "%%s, bit: %%ld / %%ld [%%.%df%%%%]%s",
+				 PRECISION, echkGerbicz ? ", %ld checked" : "");
+			sprintf (buf, fmt_mask, str, bit, total, pct, recovery_bit);
 			OutputStr (buf);
 			if (ERRCHK && bit > 30) {
 				OutputStr (".  Round off: ");
@@ -11510,6 +12396,7 @@ restart:
 				OutputStr (".  Time per bit: ");
 				divide_timer (0, iters);
 				iters = 0;
+				timers[2] = timer_value(0);
 			}
 			print_timer (0, TIMER_NL | TIMER_OPT_CLR);
 			start_timer (0);
@@ -11518,8 +12405,8 @@ restart:
 /* Print a results file message every so often */
 
 		if (bit % ITER_OUTPUT_RES == 0 || (NO_GUI && stopping)) {
-			sprintf (buf, "Bit %ld / %ld\n", bit, Nlen);
-			writeResults (buf);
+			sprintf (buf, "Bit %ld / %ld\n", bit, total);
+			writeResults(buf);
 		}
 
 /* Write results to a file every DISK_WRITE_TIME minutes */
@@ -11528,21 +12415,42 @@ restart:
 
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
+			end_timer(1);
+			timers[3] = timer_value(1);
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, bit, x, NULL)) {
-				sprintf (buf, WRITEFILEERR, filename);
+			if (saved_recovery_bit < recovery_bit)
+			{
+				if (!writeToFile(gwdata, gdata, recoverypoint, recovery_bit, u0, NULL)) {
+					sprintf(buf, WRITEFILEERR, recoverypoint);
+					OutputBoth(buf);
+					if (write_time > 600) write_time = 600;
+				}
+				else
+				{
+					saved_recovery_bit = recovery_bit;
+					if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
+						IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+				}
+			}
+			if ((saved_recovery_bit == recovery_bit) && ! writeToFile (gwdata, gdata, checkpoint, bit, x, d)) {
+				sprintf (buf, WRITEFILEERR, checkpoint);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
 			}
+
+			start_timer(1);
 			time (&start_time);
 
 /* If an escape key was hit, write out the results and return */
 
 			if (stopping) {
 				pushg(gdata, 2);
+				gwfree(gwdata, u0);
+				gwfree(gwdata, check_d);
+				gwfree(gwdata, d);
+				gwfree(gwdata, x);
 				free(gk);
 				free(N);
-				gwfree (gwdata, x);
 				gwdone (gwdata);
 				*res = FALSE;		// To avoid credit message !
 				free (gwdata);
@@ -11562,7 +12470,7 @@ restart:
 		if (interimFiles && bit % interimFiles == 0) {
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
-				 filename, bit / interimFiles);
+				checkpoint, bit / interimFiles);
 			if (! writeToFile (gwdata, gdata, interimfile, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
@@ -11575,30 +12483,35 @@ restart:
 	clearline (100);
 
 	gwtogiant (gwdata, x, tmp);		// The modulo reduction is done here
-	iaddg (1, tmp);					// Compute the (unnormalized) residue
+	if (strcmp(PROOFMODE, "VerifyCert"))
+		iaddg (1, tmp);					// Compute the (unnormalized) residue
 
-	if (gcompg (N, tmp) != 0) {
+	if (gcompg (N, tmp) != 0 || !strcmp(PROOFMODE, "VerifyCert")) {
 		*res = FALSE;				/* Not a prime */
 		if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
 			sprintf (res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
 		else
 			sprintf (res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
-
 	}
 
 	pushg(gdata, 2);
+	gwfree(gwdata, u0);
+	gwfree(gwdata, check_d);
+	gwfree(gwdata, d);
+	gwfree(gwdata, x);
 	free(gk);
 	free(N);
-	gwfree (gwdata, x);
 
 
 /* Print results.  Do not change the format of this line as Jim Fougeron of */
 /* PFGW fame automates his QA scripts by parsing this line. */
 
-	if (*res)
+	if (!strcmp(PROOFMODE, "VerifyCert"))
+		sprintf(buf, "Certificate RES64: %s", res64);
+	else if (*res)
 		sprintf (buf, "%s is prime! (%lu decimal digits)", str, nbdg); 
 	else
-		sprintf (buf, "%s is not prime.  Proth RES64: %s", str, res64);
+		sprintf(buf, "%s is not prime.  Proth RES64: %s", str, res64);
 
 #if defined(WIN32) && !defined(_CONSOLE)
 
@@ -11637,7 +12550,8 @@ restart:
 /* Cleanup and return */
 
 	gwdone (gwdata);
-	_unlink (filename);
+	_unlink (checkpoint);
+	_unlink (recoverypoint);
 	IniWriteString(INI_FILE, "FFT_Increment", NULL);
 	lasterr_point = 0;
 	free (gwdata);
@@ -11647,6 +12561,9 @@ restart:
 
 error:
 	pushg(gdata, 2);
+	gwfree(gwdata, u0);
+	gwfree(gwdata, check_d);
+	gwfree(gwdata, d);
 	gwfree (gwdata, x);
 	*res = FALSE;
 
@@ -11655,10 +12572,11 @@ error:
 		(abonroundoff && gw_get_maxerr(gwdata) > maxroundoff)) {	// Abort...
 		aborted = TRUE;
 		sprintf (buf, ERRMSG5, checknumber, str);
-		OutputBoth (buf);
+		OutputError(buf);
 		free(gk);
 		free(N);
-		_unlink (filename);
+		_unlink (checkpoint);
+		_unlink (recoverypoint);
 		gwdone (gwdata);
 		free (gwdata);
 		if(IniGetInt(INI_FILE, "StopOnAbort", 0)) {
@@ -11673,8 +12591,8 @@ error:
 
 /* Output a message saying we are restarting */
 
-	if (sleep5) OutputBoth (ERRMSG2);
-	OutputBoth (ERRMSG3);
+	if (sleep5) OutputError(ERRMSG2);
+	OutputError(ERRMSG3);
 
 /* Sleep five minutes before restarting */
 
@@ -11868,27 +12786,13 @@ int isGMNP (
 		a = 0;						// N and NP are small numbers, so we may make APRCL tests...
 		res1 = res2 = 0;			// Clear the results...		
 		start_timer(1);				// Beginning the test of the GMN...
-		if (nbdg1 < 100) {			// Attempt an APRCL test only on M.N. less than 100 digits large...
-			resaprcl1 = gaprcltest (N, 0, 0);// Primality test silently done
+		if (N->sign == 1) {		// Attempt an APRCL test...
+			resaprcl1 = (isPrime(N->n[0]) ? 12 : 10);
 			res1 = ((resaprcl1 == 2)||(resaprcl1 == 12));
 			if (resaprcl1 == 10)
 				sprintf (buf,"%s is not prime. (Trial divisions)\n", str);
 			else if (resaprcl1 == 12)
 				sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", str, nbdg1);
-			else if (resaprcl1 == 0)
-				sprintf (buf,"%s is not prime. (APRCL test)\n", str);
-			else if (resaprcl1 == 2)
-				sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", str, nbdg1);
-			else if (resaprcl1 == 6)
-				sprintf (buf,"Invalid numerical string in %s\n", str);
-			else if (resaprcl1 == 7)
-				sprintf (buf,"APRCL error while testing %s...\n", str);
-			else {
-				if (resaprcl1 == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", str);
-				else
-					sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl1, str);
-			}
 			if (res1) {
 #if !defined(WIN32) || defined(_CONSOLE)
 #ifdef _CONSOLE
@@ -11913,39 +12817,13 @@ int isGMNP (
 			}
 
 		}
-		if (nbdg2 > maxaprcl)					// Now testing the cofactor, if not too large...
-			resaprcl2 = gaprcltest (NP, 1, 0);	// Make only a Strong BPSW PRP test
-		else if (debug)
-			resaprcl2 = gaprcltest (NP, 0, 2);	// Primality test while showing progress 
-		else
-			resaprcl2 = gaprcltest (NP, 0, 0);	// Primality test silently done
-		end_timer (1);
+		if (NP->sign == 1)
+			resaprcl2 = (isPrime(NP->n[0]) ? 12 : 10);
 		res2 = ((resaprcl2 == 1)||(resaprcl2 == 2)||(resaprcl2 == 12));
 		if (resaprcl2 == 10)
 			sprintf (buf,"%s is not prime. (Trial divisions)", strp);
 		else if (resaprcl2 == 12)
 			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", strp, nbdg2);
-		else if (resaprcl2 == 0) {				// Not prime message may be useless here...
-			if (nbdg1 < 100)
-				sprintf (buf,"%s is not prime. (APRCL test)", strp);
-			else if ((N->sign > 1)||(NP->sign > 1))
-				goto COFCONTINUE;				// Continue the PRP test to get the residue...
-		}
-		else if (resaprcl2 == 1)				// BPSW PRP candidate
-			sprintf (buf,"%s is a probable BPSW prime! (%lu decimal digits, APRCL test) ", strp, nbdg2);
-		else if (resaprcl2 == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", strp, nbdg2);
-		else if (resaprcl2 == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", strp);
-		else if (resaprcl2 == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", strp);
-		}
-		else {
-			if (resaprcl2 == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", strp);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl2, strp);
-		}
 #if defined(WIN32) && !defined(_CONSOLE)
 
 		sprintf (buf+strlen(buf), "  Time : "); 
@@ -13036,46 +13914,16 @@ int isWSPRP (
 	gtog (M, NP);					// NP  = 2^n + 1
 	uldivg (3, NP);					// NP  = (2^n + 1)/3
 
-	if (!facto && ((nbdg = gnbdg(NP, 10)) < 2000)) {	// Attempt an APRCL test...
+	if (!facto && N->sign == 1) {		// Attempt an APRCL test...
 		start_timer(1);
-		if (nbdg > maxaprcl)
-			resaprcl = gaprcltest (NP, 1, 0);			// Make only a Strong BPSW PRP test
-		else if (debug)
-			resaprcl = gaprcltest (NP, 0, 2);			// Primality test while showing progress 
-		else
-			resaprcl = gaprcltest (NP, 0, 0);			// Primality test silently done
-		end_timer (1);
+		resaprcl = (isPrime(N->n[0]) ? 12 : 10);
+		end_timer(1);
 		if (resaprcl == 10)
 			sprintf (buf,"%s is not prime. (Trial divisions)", sgk);
 		else if (resaprcl == 12)
 			sprintf (buf,"%s is prime! (%lu decimal digits, Trial divisions)", sgk, nbdg);
-		else if (resaprcl == 0)
+		else
 			goto WSTFCONTINUE;							// Continue the PRP test to get the residue...
-		else if (resaprcl == 1)
-			sprintf (buf,"%s is a probable BPSW prime! (%lu decimal digits, APRCL test) ", sgk, nbdg);
-		else if (resaprcl == 2)
-			sprintf (buf,"%s is prime! (%lu decimal digits, APRCL test)", sgk, nbdg);
-		else if (resaprcl == 6)
-			sprintf (buf,"Invalid numerical string in %s\n", sgk);
-		else if (resaprcl == 7) {
-			sprintf (buf,"APRCL error while testing %s...\n", sgk);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto WSTFCONTINUE;							// Continue the PRP test to get the residue...
-		}
-		else {
-			if (resaprcl == 9)
-				sprintf (buf, "APRCL primality test not available for %s\n", sgk);
-			else
-				sprintf (buf,"Unexpected return value : %d, while APRCL testing %s...\n", resaprcl, sgk);
-			if (verbose)
-				OutputBoth(buf);
-			else
-				OutputStr (buf);
-			goto WSTFCONTINUE;							// Continue the PRP test to get the residue...
-		}
 		*res = ((resaprcl == 1)||(resaprcl == 2)||(resaprcl == 12));
 
 #if defined(WIN32) && !defined(_CONSOLE)
@@ -13962,7 +14810,7 @@ int primeContinue ()
 
 	if (work == 0) {
 	    char	inputfile[80], outputfile[80], oldinputfile[80], cmaxroundoff[10], cpcfftlim[10], sgk[sgkbufsize], buff[sgkbufsize+256];
-		char	hbuff[sgkbufsize+256], outbuf[sgkbufsize+256], last_processed_k[sgkbufsize+256], sstart[1000], sstop[1000];
+		char	hbuff[sgkbufsize+256], outbuf[sgkbufsize+256], last_processed_k[sgkbufsize+256];
 	    FILE *fd;
 	    unsigned long i, chainlen, n, nfudge, nn;
 	    int	firstline, line, hline, resultline,
@@ -14669,118 +15517,6 @@ OPENFILE :
 					}
 				}			// End of NewPGen format processing
 
-				else if (format == ABCWFT) {			// Wieferich test
-					if ((nargs = sscanf (buff+begline, "%s %s", sgk, sgb)) < 1)
-						continue;						// Skip invalid line
-					if (!isDigitString (sgk))
-						continue;						// Skip invalid line
-					if (nargs == 2) {
-						if (!isDigitString (sgb))
-							continue;					// Skip invalid line
-						if (!gmpisWieferich (sgk, sgb, &res))
-							goto done;
-					}
-					else if (!gmpisWieferich (sgk, NULL, &res))
-							goto done;
-					if (res) {
-						resultline = IniGetInt(INI_FILE, "ResultLine", 0);
-						outfd = _open (outputfile, _O_TEXT | _O_RDWR | _O_APPEND | _O_CREAT, 0666);
-						if (outfd) {
-							if (hline >= resultline) {	// write the relevant header
-								writelg = _write (outfd, hbuff, strlen (hbuff));
-							}
-							if (nargs == 2)
-								sprintf (outbuf, "%s %s\n", sgk, sgb); 
-							else
-								sprintf (outbuf, "%s\n", sgk); 
-							writelg = _write (outfd, outbuf, strlen (outbuf));
-							_close (outfd);
-						}
-						IniWriteInt (INI_FILE, "ResultLine", line);	// update the result line
-					}
-				}
-				else if (format == ABCWFS) {			// Wieferich search
-					if ((nargs = sscanf (buff+begline, "%s %s %s", sstart, sstop, sgb)) < 2)
-						continue;						// Skip invalid line
-					if (!isDigitString (sstart))
-						continue;						// Skip invalid line
-					if (!isDigitString (sstop))
-						continue;						// Skip invalid line
-					if (nargs == 3) {
-						if (!isDigitString (sgb))
-							continue;					// Skip invalid line
-						if (!gmpSearchWieferich (sstart, sstop, sgb))
-							goto done;
-					}
-					else {
-						sprintf (sgb,"2");
-						if (!gmpSearchWieferich (sstart, sstop, NULL))
-							goto done;
-					}
-				}
-				else if (format == ABCGPT) {			// General prime test
-					if (sscanf (buff+begline, "%s", sgk) != 1)
-						continue;						// Skip invalid line
-					if (!isDigitString (sgk))
-						continue;						// Skip invalid line
-					res = saprcltest (sgk, FALSE, FALSE);
-					if (res == 2) {
-						sprintf (buff, "%s is prime!(APRCL test)\n", sgk);
-						clearline (100);
-#if defined (__linux__) || defined (__FreeBSD__) || defined (__APPLE__)
-						OutputStr("\033[7m");
-						OutputBoth (buff);
-						OutputStr("\033[0m");
-#else
-#if defined _CONSOLE
-						hConsole = GetStdHandle(STD_OUTPUT_HANDLE);	// Access to Console attributes
-						SetConsoleTextAttribute(hConsole, BACKGROUND_BLUE | BACKGROUND_GREEN | BACKGROUND_RED);
-						OutputBoth(buff);
-						SetConsoleTextAttribute(hConsole, FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_RED);
-#else
-						OutputBoth (buff);
-#endif
-#endif
-						clearline (100);
-						resultline = IniGetInt(INI_FILE, "ResultLine", 0);
-						outfd = _open (outputfile, _O_TEXT | _O_RDWR | _O_APPEND | _O_CREAT, 0666);
-						if (outfd) {
-							if (hline >= resultline) {	// write the relevant header
-								writelg = _write (outfd, hbuff, strlen (hbuff));
-							}
-							sprintf (outbuf, "%s\n", sgk); 
-							writelg = _write (outfd, outbuf, strlen (outbuf));
-							_close (outfd);
-						}
-						IniWriteInt (INI_FILE, "ResultLine", line);	// update the result line
-					}
-					else if (res == 0){
-						sprintf (buff, "%s is not prime.(APRCL test)\n", sgk);
-						OutputBoth (buff);
-					}
-					else if (res == 9) {
-						sprintf (buff, "APRCL primality test not available for %s\n", sgk);
-						if (verbose)
-							OutputBoth(buff);
-						else
-							OutputStr (buff);
-						continue;
-					}
-					else if (res == 7) {
-						sprintf (buff,"APRCL error while testing %s...\n", sgk);
-						if (verbose)
-							OutputBoth(buff);
-						else
-							OutputStr (buff);
-					}
-					else {
-						sprintf (buff,"Unexpected return value : %d, while APRCL testing %s...\n", res, sgk);
-						if (verbose)
-							OutputBoth(buff);
-						else
-							OutputStr (buff);
-					}
-				}
 				else if (format == ABCCW) {		// Cullen/Woodall
 					if (sscanf (buff+begline, "%lu %s %d", &n, sgb, &incr) != 3)
 						continue;				// Skip invalid line
@@ -15501,3 +16237,117 @@ done:
 	return (completed);
 }
 
+#ifdef NETLLR
+void initGlobals()
+{
+	verbose = IniGetInt(INI_FILE, "Verbose", 0);
+	setuponly = IniGetInt(INI_FILE, "SetupOnly", 0);
+	showdigits = IniGetInt(INI_FILE, "ShowDigits", 0);
+	nosaving = IniGetInt(INI_FILE, "NoSaveFile", 0);
+	testgm = IniGetInt(INI_FILE, "TestGM", 1);
+	testgq = IniGetInt(INI_FILE, "TestGQ", 0);
+	testfac = IniGetInt(INI_FILE, "TestFac", 0);
+	facfrom = IniGetInt(INI_FILE, "FacFrom", 0);
+	facto = IniGetInt(INI_FILE, "FacTo", 0);
+	general = IniGetInt(INI_FILE, "Vgene", 0);
+	eps2 = IniGetInt(INI_FILE, "Veps2", 0);
+	debug = IniGetInt(INI_FILE, "Debug", 0);
+	postfft = IniGetInt(INI_FILE, "Postfft", 1);
+	generic = IniGetInt(INI_FILE, "ForceGeneric", 0);
+	vrbareix = IniGetInt(INI_FILE, "VrbaReixTest", 0);
+	dualtest = IniGetInt(INI_FILE, "DualTest", 0);
+	bpsw = IniGetInt(INI_FILE, "BPSW", 0);
+	nofac = IniGetInt(INI_FILE, "NoPrefactoring", 0);
+	maxaprcl = IniGetInt(INI_FILE, "MaxAprcl", 200);
+	primolimit = IniGetInt(INI_FILE, "PrimoLimit", 30000);
+	nextifnear = IniGetInt(INI_FILE, "NextFFTifNearLimit", 0);
+	maxfftinc = IniGetInt(INI_FILE, "MaxFFTinc", 5);
+
+	/* A new option to create interim save files every N iterations. */
+	/* This allows two machines to simultanously work on the same exponent */
+	/* and compare results along the way. */
+
+	interimFiles = IniGetInt(INI_FILE, "InterimFiles", 0);
+	interimResidues = IniGetInt(INI_FILE, "InterimResidues", interimFiles);
+
+	/* Option to slow down the program by sleeping after every iteration.  You */
+	/* might use this on a laptop or a computer running in a hot room to keep */
+	/* temperatures down and thus reduce the chance of a hardware error.  */
+
+	throttle = IniGetInt(INI_FILE, "Throttle", 0);
+
+	TWO_BACKUP_FILES = 0;
+}
+
+void resetGlobals()
+{
+	error_count = 0;
+	memset(maxerr_recovery_mode, 0, sizeof(maxerr_recovery_mode));
+	lasterr_point = 0;
+	memset(last_bit, 0, sizeof(last_bit));
+	memset(last_maxerr, 0, sizeof(last_maxerr));
+
+	res64[0] = 0;
+	PROOFMODE[0] = 0;
+}
+
+int isPRP(
+	char* sgk,
+	char* sgb,
+	unsigned long n,		/* n in k*b^n+c */
+	signed long c,			/* c in k*b^n+c */
+	int	*res)
+{
+	int	retval;
+	double dk;
+	char str[sgkbufsize+256];
+
+	sprintf(str, "%s*%s^%lu%c%d", sgk, sgb, n, c < 0 ? '-' : '+', abs(c));
+
+	gk = newgiant(strlen(sgk) / 2 + 8);	// Allocate one byte per decimal digit + spares
+	ctog(sgk, gk);						// Convert b string to giant
+
+	giant gb = newgiant(strlen(sgb) / 2 + 8);	// Allocate one byte per decimal digit + spares
+	ctog(sgb, gb);						// Convert b string to giant
+
+	unsigned long bits = n*bitlen(gb) + bitlen(gk);
+	N = newgiant((bits >> 4) + 8);		// Allocate memory for N
+
+	gtog(gb, N);
+	power(N, n);
+	mulg(gk, N);
+	iaddg(c, N);
+
+	if (klen > 53 || generic) {			// we must use generic reduction
+		dk = 0.0;
+	}
+	else {								// we can use DWT, compute k as a double
+		dk = (double)gk->n[0];
+		if (gk->sign > 1)
+			dk += 4294967296.0*(double)gk->n[1];
+	}
+
+	retval = isPRPinternal(str, dk, gb, n, c, res);
+
+	free(gb);
+	return retval;
+}
+
+int plusminusinit(
+	char *sgk,
+	char *sgb,
+	unsigned long n,
+	int incr,
+	unsigned long shift,
+	int	*res)
+{
+	int	retval;
+
+	giant gb = newgiant(strlen(sgb) / 2 + 8);	// Allocate one byte per decimal digit + spares
+	ctog(sgb, gb);						// Convert b string to giant
+	retval = plusminustest(sgk, sgb, gb, n, incr, shift, res);
+
+	free(gb);
+	return retval;
+}
+#endif
