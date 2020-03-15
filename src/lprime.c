@@ -86,6 +86,7 @@ int NETWORKING = 0;
 #include "Qfields.c"
 #include "factor.c"
 #include "md5.c"
+#include "aprcl.c"
 #include "Llr.c"
 
 /* Signal handlers */
