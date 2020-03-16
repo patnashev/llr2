@@ -712,7 +712,10 @@ void gfact (
 		count = 0;
 
 		gtog(zr, gg);
-		gcdg(N, gg);
+		if (!isZero(gg))
+			gcdg(N, gg);
+		else
+			gtog(N, gg);
 		if ((!isone(gg))&&(bitlen(gg)>limitbits))
 		{				// gg != 1 and not too small
 			gtog(gg, DV);	// divisor candidate
@@ -810,7 +813,10 @@ void gfact (
 			gtog(zs, zb[0]);
 		}
 
-		gcdg(N, gg);
+		if (!isZero(gg))
+			gcdg(N, gg);
+		else
+			gtog(N, gg);
 		if((!isone(gg))&&(bitlen(gg)>limitbits))
 		{				// gg != 1 and not too small
 			gtog(gg, DV);	// divisor candidate

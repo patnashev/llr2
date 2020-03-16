@@ -1335,7 +1335,7 @@ int writeToFile (
 	magicnum = 0x9f2b3cd4;
 	if (io_write (fd, &magicnum, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
-	version = 1;
+	version = 2;
 	if (io_write (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t))
 		goto writeerr;
 
@@ -1443,7 +1443,7 @@ int readFromFile (
 	if (magicnum != 0x9f2b3cd4) goto readerr;
 
 	if (io_read (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
-	if (version != 1 && version != 2) goto readerr;
+	if (version != 2) goto readerr;
 
 /* Read the file data */
 
@@ -4349,7 +4349,7 @@ int gaprcltest(giant N, int prptest, int verbose) {
     if (!prptest)
         retval = g_aprtcle(N, verbose);
     else
-        retval = g_bpsw_prp(N);
+        retval = g_strongbpsw_prp(N);
     return retval;
 }
 
@@ -6640,15 +6640,26 @@ int gerbiczPRP(
 				clearline(100);
 				sprintf(buf, "Gerbicz check failed at %d.\n", bit - 1);
 				OutputError(buf);
-				IniWriteInt(INI_FILE, "Gerbicz_Error_Count", error_count = IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) + 1);
+                io_reset(checkpoint);
+
+                IniWriteInt(INI_FILE, "Gerbicz_Error_Count", error_count = IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) + 1);
 				if (error_count > MAX_ERROR_COUNT)
 				{
+                    sprintf(buf, "Too many errors, aborting.\n");
 					IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
-					io_reset(checkpoint);
 					io_reset(recoverypoint);
-				}
-				else
-					io_reset(checkpoint);
+
+                    pushg(gdata, 3);
+                    for (i = 0; i < (1 << (K - 1)); i++)
+                        gwfree(gwdata, u[i]);
+                    free(u);
+                    gwfree(gwdata, u0);
+                    gwfree(gwdata, check_d);
+                    gwfree(gwdata, d);
+                    gwfree(gwdata, x);
+                    *res = FALSE;
+                    return (FALSE);
+                }
 				restarting = TRUE;
 				goto error;
 			}
@@ -12753,15 +12764,27 @@ restart:
 					clearline(100);
 					sprintf(buf, "Gerbicz check failed at %d.\n", bit);
 					OutputError(buf);
-					IniWriteInt(INI_FILE, "Gerbicz_Error_Count", error_count = IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) + 1);
+                    io_reset(checkpoint);
+
+                    IniWriteInt(INI_FILE, "Gerbicz_Error_Count", error_count = IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) + 1);
 					if (error_count > MAX_ERROR_COUNT)
 					{
-						IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
-						io_reset(checkpoint);
+                        sprintf(buf, "Too many errors, aborting.\n");
+                        IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 						io_reset(recoverypoint);
-					}
-					else
-						io_reset(checkpoint);
+
+                        pushg(gdata, 2);
+                        gwfree(gwdata, u0);
+                        gwfree(gwdata, check_d);
+                        gwfree(gwdata, d);
+                        gwfree(gwdata, x);
+                        free(gk);
+                        free(N);
+                        gwdone(gwdata);
+                        *res = FALSE;		// To avoid credit message !
+                        free(gwdata);
+                        return (FALSE);
+                    }
 					restarting = TRUE;
 					goto error;
 				}
