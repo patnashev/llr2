@@ -5929,7 +5929,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 	gwtogiant(gwdata, u0, tmp);
 
 	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-	sprintf(proofpoint + strlen(proofpoint), ".%d", 0);
+	sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
 	if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, recovery_bit, d, NULL) || 0 + 1 != *recovery_bit)
 	{
 		sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
@@ -5990,7 +5990,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 	{
 		//OutputStr("i\n");
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-		sprintf(proofpoint + strlen(proofpoint), ".%d", i);
+		sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
 		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, recovery_bit, u0, NULL) || (i > 1 && i*M + 1 != *recovery_bit))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
@@ -6142,7 +6142,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 		for (i = 0; i < s; i++)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%d", i);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
 			_unlink(proofpoint);
 		}
 
@@ -6236,7 +6236,7 @@ int gerbiczPRP(
 		for (bit = 0; bit < total; bit += M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, x, NULL) || bit + 1 != bits)
 				break;
 			gwcopy(gwdata, x, u0);
@@ -6315,7 +6315,7 @@ int gerbiczPRP(
 	else if (!strcmp(PROOFMODE, "VerifyRes"))
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-		sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
 		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
@@ -6340,7 +6340,7 @@ int gerbiczPRP(
 		for (; (long)s >= 0; s--)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
 			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
@@ -6390,7 +6390,7 @@ int gerbiczPRP(
 		if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "Save0"))
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%d", 0);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
 			if (!writeToFileMD5(gwdata, gdata, proofpoint, 1, u0, NULL)) {
 				sprintf(buf, WRITEFILEERR, proofpoint);
 				OutputError(buf);
@@ -6638,7 +6638,7 @@ int gerbiczPRP(
 			if (isZero(tmp) || !isZero(tmp2))
 			{
 				clearline(100);
-				sprintf(buf, "Gerbicz check failed at %d.\n", bit - 1);
+				sprintf(buf, "Gerbicz check failed at %lu.\n", bit - 1);
 				OutputError(buf);
                 io_reset(checkpoint);
 
@@ -6665,7 +6665,7 @@ int gerbiczPRP(
 			}
 			else
 			{
-				//sprintf(buf, "Gerbicz check %d passed.\n", bit - 1);
+				//sprintf(buf, "Gerbicz check %lu passed.\n", bit - 1);
 				//OutputError(buf);
 				// u0 = d = x
 				gwcopy(gwdata, x, u0);
@@ -6688,7 +6688,7 @@ int gerbiczPRP(
 				if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")))
 				{
 					IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-					sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+					sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 					if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
 						sprintf(buf, WRITEFILEERR, proofpoint);
 						OutputError(buf);
@@ -6740,7 +6740,7 @@ int gerbiczPRP(
 			sprintf(fmt_mask,
 				"%%s, bit: %%ld / %%ld [%%.%df%%%%], %%ld checked",
 				PRECISION);
-			sprintf(buf, fmt_mask, str, bit, total, pct, recovery_bit);
+			sprintf(buf, fmt_mask, str, bit, total, pct, recovery_bit - 1);
 			OutputStr(buf);
 			if (ERRCHK && bit > 30) {
 				OutputStr(".  Round off: ");
@@ -12426,7 +12426,7 @@ restart:
 		for (bit = 0; bit < total; bit += M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, x, NULL) || bit + 1 != bits)
 				break;
 			gwcopy(gwdata, x, u0);
@@ -12508,7 +12508,7 @@ restart:
 	else if (!strcmp(PROOFMODE, "VerifyRes"))
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-		sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
 		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
@@ -12534,7 +12534,7 @@ restart:
 		for (; (long)s >= 0; s--)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%d", s);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
 			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
@@ -12585,7 +12585,7 @@ restart:
 			if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "Save0"))
 			{
 				IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-				sprintf(proofpoint + strlen(proofpoint), ".%d", 0);
+				sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
 				if (!writeToFileMD5(gwdata, gdata, proofpoint, 1, u0, NULL)) {
 					sprintf(buf, WRITEFILEERR, proofpoint);
 					OutputError(buf);
@@ -12762,7 +12762,7 @@ restart:
 				//if (!gwiszero(gwdata, d))
 				{
 					clearline(100);
-					sprintf(buf, "Gerbicz check failed at %d.\n", bit);
+					sprintf(buf, "Gerbicz check failed at %lu.\n", bit);
 					OutputError(buf);
                     io_reset(checkpoint);
 
@@ -12790,7 +12790,7 @@ restart:
 				}
 				else
 				{
-					//sprintf(buf, "Gerbicz check %d passed.\n", bit);
+					//sprintf(buf, "Gerbicz check %lu passed.\n", bit);
 					//OutputError(buf);
 					gwcopy(gwdata, x, u0);
 					gwcopy(gwdata, x, d);
@@ -12803,7 +12803,7 @@ restart:
 					if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")))
 					{
 						IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-						sprintf(proofpoint + strlen(proofpoint), ".%d", bit/M);
+						sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 						if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
 							sprintf(buf, WRITEFILEERR, proofpoint);
 							OutputError(buf);
@@ -12866,7 +12866,7 @@ restart:
 			sprintf (fmt_mask,
 				 "%%s, bit: %%ld / %%ld [%%.%df%%%%]%s",
 				 PRECISION, echkGerbicz ? ", %ld checked" : "");
-			sprintf (buf, fmt_mask, str, bit, total, pct, recovery_bit);
+			sprintf (buf, fmt_mask, str, bit, total, pct, recovery_bit - 1);
 			OutputStr (buf);
 			if (ERRCHK && bit > 30) {
 				OutputStr (".  Round off: ");
