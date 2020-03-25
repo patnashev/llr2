@@ -210,15 +210,6 @@ int main (
 	(void)signal(SIGTERM, sigterm_handler);
 	(void)signal(SIGINT, sigterm_handler);
 
-/* Change to the executable's directory*/
-
-	strcpy (buf, argv[0]);
-	p = strrchr (buf, '/');
-	if (p != NULL) {
-		*p = 0;
-		lchd = _chdir (buf);
-	}
-
 /* Process command line switches */
 
 	for (i = 1; i < argc; i++) {

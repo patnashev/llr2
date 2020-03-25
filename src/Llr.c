@@ -6695,7 +6695,9 @@ int gerbiczPRP(
 						goto error;
 					}
 					saved_recovery_bit = recovery_bit;
-					if (!strcmp(PROOFMODE, "RedoMissing"))
+                    if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
+                        IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+                    if (!strcmp(PROOFMODE, "RedoMissing"))
 					{
 						pushg(gdata, 3);
 						for (i = 0; i < (1 << (K - 1)); i++)
@@ -12810,7 +12812,9 @@ restart:
 							goto error;
 						}
 						saved_recovery_bit = recovery_bit;
-						if (!strcmp(PROOFMODE, "RedoMissing"))
+                        if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
+                            IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+                        if (!strcmp(PROOFMODE, "RedoMissing"))
 						{
 							pushg(gdata, 2);
 							gwfree(gwdata, u0);
