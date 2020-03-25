@@ -6233,7 +6233,7 @@ int gerbiczPRP(
 	ops = 0;
 	if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
-		for (bit = 0; bit < total; bit += M)
+		for (bit = 0; bit/M <= s; bit += M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
@@ -6242,7 +6242,7 @@ int gerbiczPRP(
 			gwcopy(gwdata, x, u0);
 			recovery_bit = bits;
 		}
-		if (bit >= total)
+		if (bit/M > s)
 		{
 			pushg(gdata, 3);
 			for (i = 0; i < (1 << (K - 1)); i++)
@@ -6337,10 +6337,10 @@ int gerbiczPRP(
 	}
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (; (long)s >= 0; s--)
+		for (bit = s*M; (long)bit >= 0; bit -= M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
@@ -6685,9 +6685,9 @@ int gerbiczPRP(
 					explen = bitlen(gexp);
 				}
 
-				if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")))
+				if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
 				{
-					IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+                    IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 					sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 					if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
 						sprintf(buf, WRITEFILEERR, proofpoint);
@@ -12425,7 +12425,7 @@ restart:
 	recovery_bit = 0;
 	if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
-		for (bit = 0; bit < total; bit += M)
+		for (bit = 0; bit/M <= s; bit += M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
@@ -12434,7 +12434,7 @@ restart:
 			gwcopy(gwdata, x, u0);
 			recovery_bit = bits;
 		}
-		if (bit >= total)
+		if (bit/M > s)
 		{
 			pushg(gdata, 2);
 			gwfree(gwdata, u0);
@@ -12533,10 +12533,10 @@ restart:
 	}
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (; (long)s >= 0; s--)
+		for (bit = s*M; (long)bit >= 0; bit -= M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
@@ -12802,7 +12802,7 @@ restart:
 						L /= 2;
 						L2 = L*L;
 					}
-					if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")))
+					if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
 					{
 						IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 						sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
