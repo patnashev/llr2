@@ -411,6 +411,10 @@ void OutputNum (
 
 #define MAX_ERROR_COUNT 5
 
+static unsigned long error_points[MAX_ERROR_COUNT] = { 0 };
+unsigned int cur_error_point = 0;
+unsigned int total_error_points = 0;
+
 char ERROK[] = "Disregard last error.  Result is reproducible and thus not a hardware problem.\n";
 char ERRMSG0L[] = "Iter: %ld/%ld, %s";
 char ERRMSG0[] = "Bit: %ld/%ld, %s"; 
@@ -6152,6 +6156,30 @@ error:
 	return FALSE;
 }
 
+void clearErrorPoints()
+{
+    cur_error_point = 0;
+    total_error_points = 0;
+}
+
+int addErrorPoint(unsigned long ops)
+{
+    if (cur_error_point < total_error_points && error_points[cur_error_point] == ops)
+    {
+        cur_error_point++;
+        return TRUE;
+    }
+    if (total_error_points >= MAX_ERROR_COUNT)
+    {
+        will_try_larger_fft = TRUE;
+        return FALSE;
+    }
+    error_points[cur_error_point] = ops;
+    cur_error_point++;
+    total_error_points = cur_error_point;
+    return TRUE;
+}
+
 int gerbiczPRP(
 	giant gb,
 	unsigned long n,		/* n in k*b^n+c */
@@ -6431,6 +6459,8 @@ int gerbiczPRP(
 		gwcopy(gwdata, u0, d);
 	}
 
+    for (cur_error_point = 0; cur_error_point < total_error_points && error_points[cur_error_point] < ops; cur_error_point++);
+
 	if (bit > 1) {
 		char	fmt_mask[80];
 		double	pct;
@@ -6492,7 +6522,7 @@ int gerbiczPRP(
 		echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
 		gwsetnormroutine(gwdata, 0, echk, 0);
 		gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
-		if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+		if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
 			gwsquare(gwdata, x);
 			care = FALSE;
 		}
@@ -6501,7 +6531,8 @@ int gerbiczPRP(
 			care = TRUE;
 		}
 		CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
-		ops++;
+        if (care && !addErrorPoint(ops)) goto error;
+        ops++;
 
 		while (K > 1 && (2 << K) > explen)
 			K--;
@@ -6516,16 +6547,17 @@ int gerbiczPRP(
 			echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
 			gwsetnormroutine(gwdata, 0, echk, 0);
 			gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
-			if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+            if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
 				gwsafemul(gwdata, x, u[i]);
 				care = FALSE;
 			}
 			else {
 				gwmul_carefully(gwdata, x, u[i]);
 				care = TRUE;
-			}
+            }
 			CHECK_IF_ANY_ERROR(u[i], (ops), bit, 6);
-			ops++;
+            if (care && !addErrorPoint(ops)) goto error;
+            ops++;
 		}
 
 		// x = u[0]
@@ -6540,16 +6572,17 @@ int gerbiczPRP(
 				echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
 				gwsetnormroutine(gwdata, 0, echk, 0);
 				gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
-				if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+                if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
 					gwsquare(gwdata, x);
 					care = FALSE;
 				}
 				else {
 					gwsquare_carefully(gwdata, x);
 					care = TRUE;
-				}
+                }
 				CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
-				ops++;
+                if (care && !addErrorPoint(ops)) goto error;
+                ops++;
 
 				i--;
 			}
@@ -6566,16 +6599,17 @@ int gerbiczPRP(
 					echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
 					gwsetnormroutine(gwdata, 0, echk, 0);
 					gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
-					if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+                    if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
 						gwsquare(gwdata, x);
 						care = FALSE;
 					}
 					else {
 						gwsquare_carefully(gwdata, x);
 						care = TRUE;
-					}
+                    }
 					CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
-					ops++;
+                    if (care && !addErrorPoint(ops)) goto error;
+                    ops++;
 
 					ui <<= 1;
 					ui += bitval(gexp, i) ? 1 : 0;
@@ -6586,16 +6620,17 @@ int gerbiczPRP(
 				echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
 				gwsetnormroutine(gwdata, 0, echk, 0);
 				gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
-				if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+                if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
 					gwsafemul(gwdata, u[ui/2], x);
 					care = FALSE;
 				}
 				else {
 					gwmul_carefully(gwdata, u[ui/2], x);
 					care = TRUE;
-				}
+                }
 				CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
-				ops++;
+                if (care && !addErrorPoint(ops)) goto error;
+                ops++;
 			}
 		}
 		bit += L;
@@ -6727,7 +6762,7 @@ int gerbiczPRP(
 
 		stopping = stopCheck();
 		time(&current_time);
-		saving = (current_time - start_time > write_time) || (bit == L + 1) || ((ops < lasterr_point + bit_ops) && (ops + bit_ops > lasterr_point));
+        saving = (current_time - start_time > write_time) || (bit == L + 1) || ((ops < lasterr_point + bit_ops) && (ops + bit_ops > lasterr_point));
 
 		/* Print a message every so often */
 
@@ -6929,6 +6964,7 @@ int gerbiczPRP(
 	_unlink(checkpoint);
 	_unlink(recoverypoint);
 	lasterr_point = 0;
+    clearErrorPoints();
 	return (TRUE);
 
 	/* An error occured, sleep if required, then try restarting at last save point. */
@@ -6977,6 +7013,7 @@ error:
 		IniWriteInt(INI_FILE, "FFT_Increment", nbfftinc = (IniGetInt(INI_FILE, "FFT_Increment", 0) + 1));
 		if (nbfftinc == maxfftinc)
 			abonroundoff = TRUE;	// Don't accept any more Roundoff error.
+        clearErrorPoints();
 	}
 	return (-1);
 }
@@ -16930,10 +16967,12 @@ void initGlobals()
 void resetGlobals()
 {
 	error_count = 0;
+    IniWriteString(INI_FILE, "Error_Count", NULL);
 	memset(maxerr_recovery_mode, 0, sizeof(maxerr_recovery_mode));
 	lasterr_point = 0;
 	memset(last_bit, 0, sizeof(last_bit));
 	memset(last_maxerr, 0, sizeof(last_maxerr));
+    total_error_points = 0;
 
 	res64[0] = 0;
 	PROOFMODE[0] = 0;
