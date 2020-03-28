@@ -6516,55 +6516,56 @@ int gerbiczPRP(
 	while (bit <= total) {
 		bit_ops = 0-ops;
 
-		// u[0] = x
-		gwcopy(gwdata, x, u[0]);
+        while (K > 1 && (2 << K) > explen)
+            K--;
 
-		// x = x*x
-		echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
-		gwsetnormroutine(gwdata, 0, echk, 0);
-		gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
-		if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
-			gwsquare(gwdata, x);
-			care = FALSE;
-		}
-		else {
-			gwsquare_carefully(gwdata, x);
-			care = TRUE;
-		}
-		CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
-        if (care && !addErrorPoint(ops)) goto error;
-        ops++;
+        // u[0] = x
+        gwcopy(gwdata, x, u[0]);
 
-		while (K > 1 && (2 << K) > explen)
-			K--;
-
-		// x^3, x^5, ..., x^(2^K - 1)
-		for (i = 1; i < (1 << (K - 1)); i++)
-		{
-			// u[i] = u[i - 1]
-			gwcopy(gwdata, u[i - 1], u[i]);
-
-			// u[i] = u[i]*x
-			echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
-			gwsetnormroutine(gwdata, 0, echk, 0);
-			gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
+        if (K > 1)
+        {
+            // x = x*x
+            echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
+            gwsetnormroutine(gwdata, 0, echk, 0);
+            gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
             if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
-				gwsafemul(gwdata, x, u[i]);
-				care = FALSE;
-			}
-			else {
-				gwmul_carefully(gwdata, x, u[i]);
-				care = TRUE;
+                gwsquare(gwdata, x);
+                care = FALSE;
             }
-			CHECK_IF_ANY_ERROR(u[i], (ops), bit, 6);
+            else {
+                gwsquare_carefully(gwdata, x);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
             if (care && !addErrorPoint(ops)) goto error;
             ops++;
-		}
 
-		// x = u[0]
-		gwcopy(gwdata, u[0], x);
+            // x^3, x^5, ..., x^(2^K - 1)
+            for (i = 1; i < (1 << (K - 1)); i++)
+            {
+                // u[i] = u[i - 1]
+                gwcopy(gwdata, u[i - 1], u[i]);
+
+                // u[i] = u[i]*x
+                echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
+                gwsetnormroutine(gwdata, 0, echk, 0);
+                gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
+                if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
+                    gwsafemul(gwdata, x, u[i]);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, x, u[i]);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(u[i], (ops), bit, 6);
+                if (care && !addErrorPoint(ops)) goto error;
+                ops++;
+            }
+        }
+
 		// x^(b^L)
-		i = explen - 2;
+		i = explen - 1;
 		while (i >= 0)
 		{
 			if (bitval(gexp, i) == 0)
@@ -6593,7 +6594,20 @@ int gerbiczPRP(
 				if (j < 0)
 					j = 0;
 				for (; bitval(gexp, j) == 0; j++);
-				int ui = 0;
+                int ui = 0;
+                if (i == explen - 1)
+                {
+                    while (i >= j)
+                    {
+                        ui <<= 1;
+                        ui += bitval(gexp, i) ? 1 : 0;
+                        i--;
+                    }
+                    // x = u[ui/2]
+                    gwcopy(gwdata, u[ui/2], x);
+                    continue;
+                }
+
 				while (i >= j)
 				{
 					// x = x*x
