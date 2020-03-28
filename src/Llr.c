@@ -6304,7 +6304,8 @@ int gerbiczPRP(
 			*res = FALSE;
 			return (stopping == TRUE);
 		}
-	}
+        strcpy(PROOFMODE, "VerifyRes");
+    }
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
@@ -12507,6 +12508,7 @@ restart:
 			*res = FALSE;
 			return (stopping == TRUE);
 		}
+        strcpy(PROOFMODE, "VerifyRes");
 	}
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
