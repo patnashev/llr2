@@ -1311,7 +1311,8 @@ int writeToFile (
 	gwhandle *gwdata,
 	ghandle *gdata,
 	char	*filename,
-	unsigned long j,
+    uint32_t fingerprint,
+    unsigned long j,
 	gwnum	x,
 	gwnum	y)
 {
@@ -1345,6 +1346,7 @@ int writeToFile (
 
 /* Write the file data */
 
+	if (! write_uint32 (fd, fingerprint, &sum)) goto writeerr;
 	if (! write_uint32 (fd, (uint32_t)j, &sum)) goto writeerr;
 
 /* Write the data values */
@@ -1401,7 +1403,8 @@ int writeToFileMD5(
 	gwhandle *gwdata,
 	ghandle *gdata,
 	char	*filename,
-	unsigned long j,
+    uint32_t fingerprint,
+    unsigned long j,
 	gwnum	x,
 	gwnum	y)
 {
@@ -1413,7 +1416,7 @@ int writeToFileMD5(
 
 	SAVE_MD5_HASH = TRUE;
 	SAVE_MD5_SIZE = ((int)gwdata->bit_length >> 3)*(y != NULL ? 2 : 1) + 128;
-	if ((retval = writeToFile(gwdata, gdata, filename, j, x, y)))
+	if ((retval = writeToFile(gwdata, gdata, filename, fingerprint, j, x, y)))
 		retval = SAVE_MD5_SUCCESS;
 
 	SAVE_MD5_HASH = FALSE;
@@ -1426,6 +1429,7 @@ int readFromFile (
 	gwhandle *gwdata,
 	ghandle *gdata,
 	char	*filename,
+    uint32_t fingerprint,
 	unsigned long *j,
 	gwnum	x,
 	gwnum	y)
@@ -1449,9 +1453,12 @@ int readFromFile (
 	if (io_read (fd, &version, sizeof (uint32_t)) != sizeof (uint32_t)) goto readerr;
 	if (version != 2) goto readerr;
 
+	if (! read_uint32 (fd, &i, &sum)) goto readerr;
+	if (i != fingerprint) goto readerr;
+
 /* Read the file data */
 
-	*j = 0;
+    *j = 0;
 	if (! read_uint32 (fd, (uint32_t*)j, &sum)) goto readerr;
 
 /* Read the values */
@@ -4399,6 +4406,7 @@ int isexpdiv (
 	gwnum	x;
 	giant	tmp;
 	char	filename[20], buf[sgkbufsize+256], fft_desc[256], oldres64[17];
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping;
 	time_t	start_time, current_time;
@@ -4413,6 +4421,7 @@ int isexpdiv (
 	iaddg (-1, N);
 
 	Nlen = bitlen (N);
+    fingerprint = gmodul(N, 3417905339);
 
 	*res = TRUE;		/* Assume the residue is one */
 
@@ -4429,7 +4438,7 @@ int isexpdiv (
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a test */
 
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, NULL)) {
+	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &bit, x, NULL)) {
 		char	fmt_mask[80];
 		double	pct;
 		pct = trunc_percent (bit * 100.0 / Nlen);
@@ -4583,7 +4592,7 @@ int isexpdiv (
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
@@ -4624,7 +4633,7 @@ int isexpdiv (
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				 filename, bit / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
@@ -4740,6 +4749,7 @@ int commonFrobeniusPRP (
 	giant	tmp, tmp2, tmp3, A;
 //	struct	gwasm_data *asm_data;
 	char	filename[20], buf[sgkbufsize+256], fft_desc[256];
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping;
 	time_t	start_time, current_time;
@@ -4758,6 +4768,7 @@ int commonFrobeniusPRP (
 	gwQ = gwalloc (gwdata);
 	
 	Nlen = bitlen (N);
+    fingerprint = gmodul(N, 3417905339);
 	tmp = popg (gdata, (Nlen >> 3) + 3);
 	tmp2 = popg (gdata, (Nlen >> 3) + 3);
 	tmp3 = popg (gdata, (Nlen >> 3) + 3);
@@ -4789,7 +4800,7 @@ int commonFrobeniusPRP (
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a Frobenius test */
 
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, y)) {
+	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &bit, x, y)) {
 		char	fmt_mask[80];
 		double	pct;
 		pct = trunc_percent (bit * 100.0 / Nlen);
@@ -4815,7 +4826,7 @@ int commonFrobeniusPRP (
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a Lucas test */
 
-		if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, y)) {
+		if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &bit, x, y)) {
 			char	fmt_mask[80];
 			double	pct;
 			pct = trunc_percent (bit * 100.0 / Nlen);
@@ -5010,7 +5021,7 @@ int commonFrobeniusPRP (
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, bit, x, y)) {
+			if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, y)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
@@ -5044,7 +5055,7 @@ int commonFrobeniusPRP (
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				 filename, bit / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, bit, x, y)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, y)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
@@ -5097,7 +5108,7 @@ int commonFrobeniusPRP (
 				sprintf (buf, "%s is Fermat and BPSW PRP, Starting Frobenius test sequence\n", str);
 			else
 				sprintf (buf, "%s is Fermat and Lucas PRP, Starting Frobenius test sequence\n", str);
-		if (! writeToFile (gwdata, gdata, filename, bit, x, y)) {
+		if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, y)) {
 			sprintf (buf, WRITEFILEERR, filename);
 			OutputBoth (buf);
 		}			// Make a save file to avoid a false restart after a roundoff error...
@@ -5239,7 +5250,7 @@ Frobeniusresume:
 			if (saving || stopping) {
 				write_time = DISK_WRITE_TIME * 60;
 				saving = FALSE;
-				if (! writeToFile (gwdata, gdata, filename, bit, x, y)) {
+				if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, y)) {
 					sprintf (buf, WRITEFILEERR, filename);
 					OutputBoth (buf);
 					if (write_time > 600) write_time = 600;
@@ -5273,7 +5284,7 @@ Frobeniusresume:
 				char	interimfile[20];
 				sprintf (interimfile, "%.8s.%03lu",
 				 filename, bit / interimFiles);
-				if (! writeToFile (gwdata, gdata, interimfile, bit, x, y)) {
+				if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, y)) {
 					sprintf (buf, WRITEFILEERR, interimfile);
 					OutputBoth (buf);
 				}
@@ -5446,6 +5457,7 @@ int commonPRP (
 	gwnum	x, y, gwminusone, gwone;
 	giant	tmp, tmp2;
 	char	filename[20], buf[sgkbufsize+256], fft_desc[256], oldres64[17];
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping, zres;
 	time_t	start_time, current_time;
@@ -5459,6 +5471,7 @@ int commonPRP (
 	io_report(fft_desc, gwfftlen(gwdata), a, net);
 
 	Nlen = bitlen (N);
+    fingerprint = gmodul(N, 3417905339);
 	tmp = popg (gdata, (Nlen >> 4) + 3);
 	tmp2 = popg (gdata, (Nlen >> 4) + 3);
 
@@ -5489,7 +5502,7 @@ int commonPRP (
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a test */
 
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, NULL)) {
+	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &bit, x, NULL)) {
 		char	fmt_mask[80];
 		double	pct;
 		pct = trunc_percent (bit * 100.0 / Nlen);
@@ -5639,7 +5652,7 @@ int commonPRP (
 			end_timer(1);
 			timers[3] = timer_value(1);
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
@@ -5673,7 +5686,7 @@ int commonPRP (
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				 filename, bit / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
@@ -5890,7 +5903,7 @@ void grnd(struct mt_state *x, int bits, giant a)
 		a->sign--;
 }
 
-int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
+int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
 	unsigned long bit, i, len, M;
 	char	proofpoint[64], buf[sgkbufsize+256];
@@ -5934,7 +5947,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 
 	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 	sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
-	if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, recovery_bit, d, NULL) || 0 + 1 != *recovery_bit)
+	if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, d, NULL) || 0 + 1 != *recovery_bit)
 	{
 		sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 		OutputError(buf);
@@ -5995,7 +6008,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 		//OutputStr("i\n");
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, recovery_bit, u0, NULL) || (i > 1 && i*M + 1 != *recovery_bit))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i > 1 && i*M + 1 != *recovery_bit))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -6123,7 +6136,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 	clear_timer(1);
 	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 	sprintf(proofpoint + strlen(proofpoint), ".crt");
-	if (!writeToFileMD5(gwdata, gdata, proofpoint, M, d, NULL)) {
+	if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, M, d, NULL)) {
 		sprintf(buf, WRITEFILEERR, proofpoint);
 		OutputError(buf);
 		return FALSE;
@@ -6199,6 +6212,7 @@ int gerbiczPRP(
 	gwnum   *u;
 	giant	tmp, tmp2, gexp;
 	char	checkpoint[20], recoverypoint[20], proofpoint[64], buf[sgkbufsize + 256], fft_desc[256];
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping;
 	time_t	start_time, current_time;
@@ -6214,6 +6228,7 @@ int gerbiczPRP(
 	Nlen = bitlen(N);
 	klen = bitlen(gk);
 	total = n;
+    fingerprint = gmodul(N, 3417905339);
 
 	tmp = popg(gdata, (Nlen >> 4) + 3);
 	tmp2 = popg(gdata, (Nlen >> 4) + 3);
@@ -6265,7 +6280,7 @@ int gerbiczPRP(
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, x, NULL) || bit + 1 != bits)
+			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
 				break;
 			gwcopy(gwdata, x, u0);
 			recovery_bit = bits;
@@ -6288,7 +6303,7 @@ int gerbiczPRP(
 	}
 	else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+		stopping = buildCertificate(total, s, a, recoverypoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -6310,7 +6325,7 @@ int gerbiczPRP(
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".crt");
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -6345,7 +6360,7 @@ int gerbiczPRP(
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -6370,19 +6385,19 @@ int gerbiczPRP(
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
 				break;
 			}
 		}
-		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, d, NULL) && (recovery_bit < bits))
+		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
 		{
 			recovery_bit = bits;
 			gwcopy(gwdata, d, u0);
 		}
 	}
-	else if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, u0, NULL))
+	else if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
 	{
 		recovery_bit = bits;
 		ops = (unsigned long)timers[4];
@@ -6412,7 +6427,7 @@ int gerbiczPRP(
 		bit = recovery_bit;
 		saved_recovery_bit = recovery_bit;
 		timers[4] = ops;
-		if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, recovery_bit, u0, NULL)) {
+		if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 			sprintf(buf, WRITEFILEERR, recoverypoint);
 			OutputBoth(buf);
 		}
@@ -6420,7 +6435,7 @@ int gerbiczPRP(
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
-			if (!writeToFileMD5(gwdata, gdata, proofpoint, 1, u0, NULL)) {
+			if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, 1, u0, NULL)) {
 				sprintf(buf, WRITEFILEERR, proofpoint);
 				OutputError(buf);
 				goto error;
@@ -6447,7 +6462,7 @@ int gerbiczPRP(
 	gtog(gb, gexp);
 	power(gexp, L);
 	explen = bitlen(gexp);
-	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, &bits, x, d) && (bits > bit) && (bits < bit + L2))
+	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (bits > bit) && (bits < bit + L2))
 	{
 		bit = bits;
 		ops = (unsigned long)timers[4];
@@ -6739,7 +6754,7 @@ int gerbiczPRP(
 				{
                     IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 					sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-					if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
+					if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL)) {
 						sprintf(buf, WRITEFILEERR, proofpoint);
 						OutputError(buf);
 						goto error;
@@ -6834,7 +6849,7 @@ int gerbiczPRP(
 			saving = FALSE;
 			if (saved_recovery_bit < recovery_bit)
 			{
-				if (!writeToFile(gwdata, gdata, recoverypoint, recovery_bit, u0, NULL)) {
+				if (!writeToFile(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 					sprintf(buf, WRITEFILEERR, recoverypoint);
 					OutputBoth(buf);
 					if (write_time > 600) write_time = 600;
@@ -6846,7 +6861,7 @@ int gerbiczPRP(
 						IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 				}
 			}
-			if ((saved_recovery_bit == recovery_bit) && !writeToFile(gwdata, gdata, checkpoint, bit, x, d)) {
+			if ((saved_recovery_bit == recovery_bit) && !writeToFile(gwdata, gdata, checkpoint, fingerprint, bit, x, d)) {
 				sprintf(buf, WRITEFILEERR, checkpoint);
 				OutputBoth(buf);
 				if (write_time > 600) write_time = 600;
@@ -7045,6 +7060,7 @@ int commonCC1P (
 	gwnum	x;
 	giant	exponent, tmp;
 	char	filename[20], buf[sgkbufsize+256], fft_desc[256], oldres64[17];
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping;
 	time_t	start_time, current_time;
@@ -7070,6 +7086,7 @@ int commonCC1P (
 
 	Nlen = bitlen (N);
 	nbdg = gnbdg (N, 10); // Compute the number of decimal digits of the tested number.
+    fingerprint = gmodul(N, 3417905339);
 
 /* Allocate memory */
 
@@ -7093,7 +7110,7 @@ int commonCC1P (
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a test */
 
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, NULL)) {
+	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &bit, x, NULL)) {
 		char	fmt_mask[80];
 		double	pct;
 		pct = trunc_percent (bit * 100.0 / Nlen);
@@ -7253,7 +7270,7 @@ int commonCC1P (
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
@@ -7283,7 +7300,7 @@ int commonCC1P (
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				 filename, bit / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
@@ -7419,6 +7436,7 @@ int commonCC2P (
 	char *str)
 {
 	char	filename[20], buf[sgkbufsize+256], fft_desc[256]; 
+    uint32_t fingerprint;
 	unsigned long bits, explen, iters, bit, bitv, D, mask=0x80000000, frestart=FALSE;
 	unsigned long nreduced, gcdn;
 	long	write_time = DISK_WRITE_TIME * 60;
@@ -7452,6 +7470,7 @@ int commonCC2P (
 
 	bits = bitlen (N);
 	nbdg = gnbdg (N, 10); // Compute the number of decimal digits of the tested number.
+    fingerprint = gmodul(N, 3417905339);
 
 	exponent = newgiant ((bits >> 4) + 8);	// Allocate memory for exponent
 	tmp = newgiant ((bits >> 3) + 8);		// Allocate memory for tmp
@@ -7472,7 +7491,7 @@ int commonCC2P (
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a test */
 
-	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &bit, x, y)) {
+	if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &bit, x, y)) {
 		char	fmt_mask[80];
 		double	pct;
 		pct = trunc_percent (bit * 100.0 / explen);
@@ -7677,7 +7696,7 @@ int commonCC2P (
 		if (saving || stopping) {
 			write_time = DISK_WRITE_TIME * 60;
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, bit, x, y)) {
+			if (! writeToFile (gwdata, gdata, filename, fingerprint, bit, x, y)) {
 				sprintf (buf, WRITEFILEERR, filename);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
@@ -7711,7 +7730,7 @@ int commonCC2P (
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				 filename, bit / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, bit, x, y)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, y)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
@@ -11065,6 +11084,7 @@ int isLLRP (
 	giant	tmp, gbinput; 
 	char	filename[20], buf[sgkbufsize+256], str[sgkbufsize+256],
 			sgk1[sgkbufsize], fft_desc[256]; 
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60; 
 	int		resaprcl, echk, saving, stopping, v1, first = 1, inc = -1; 
 	time_t	start_time, current_time; 
@@ -11177,6 +11197,7 @@ int isLLRP (
 
 	Nlen = bitlen (N); 
 	nbdg = gnbdg (N, 10); // Compute the number of decimal digits of the tested number.
+    fingerprint = gmodul(N, 3417905339);
 
 	globalk = dk;
 
@@ -11404,7 +11425,7 @@ restart:
 /* Optionally resume from save file and output a message */ 
 /* indicating we are resuming a test */ 
  
-	if (fileExists(filename) && readFromFile (gwdata, gdata, filename, &j, x, NULL)) {
+	if (fileExists(filename) && readFromFile (gwdata, gdata, filename, fingerprint, &j, x, NULL)) {
 		char	fmt_mask[80]; 
 		double	pct; 
 		pct = trunc_percent (j * 100.0 / n); 
@@ -11488,7 +11509,7 @@ restart:
 			return(TRUE);
 	    }
 
-	    if (fileExists (filename) && readFromFile (gwdata, gdata, filename, &j, x, y)) {
+	    if (fileExists (filename) && readFromFile (gwdata, gdata, filename, fingerprint, &j, x, y)) {
 			char	fmt_mask[80]; 
 			double	pct; 
 			pct = trunc_percent (100.0 - j * 100.0 / klen); 
@@ -11725,7 +11746,7 @@ restart:
 			if (saving || stopping) { 
 				write_time = DISK_WRITE_TIME * 60; 
 				saving = FALSE;
-				if (! writeToFile (gwdata, gdata, filename, j, x, y)) {
+				if (! writeToFile (gwdata, gdata, filename, fingerprint, j, x, y)) {
 					sprintf (buf, WRITEFILEERR, filename); 
 					OutputBoth (buf); 
 					if (write_time > 600) write_time = 600; 
@@ -11891,7 +11912,7 @@ MERSENNE:
 			end_timer(1);
 			timers[3] = timer_value(1);
 			saving = FALSE;
-			if (! writeToFile (gwdata, gdata, filename, j, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, filename, fingerprint, j, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, filename); 
 				OutputBoth (buf); 
 				if (write_time > 600) write_time = 600; 
@@ -11928,7 +11949,7 @@ MERSENNE:
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				 filename, j / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, j, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, j, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
@@ -12165,6 +12186,7 @@ int isProthP(
 	giant	tmp, tmp2, gbinput;
 	char	checkpoint[20], recoverypoint[20], proofpoint[20], buf[sgkbufsize+256],
 		str[sgkbufsize+256], fft_desc[256], sgk1[sgkbufsize];
+    uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	resaprcl, echk, saving, stopping, echkGerbicz = +1;
 	time_t	start_time, current_time;
@@ -12258,6 +12280,7 @@ int isProthP(
 	Nlen = bitlen(N);
 	klen = bitlen(gk);
 	total = n - 1;
+    fingerprint = gmodul(N, 3417905339);
 
     if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
         start_timer(1);
@@ -12481,7 +12504,7 @@ restart:
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, x, NULL) || bit + 1 != bits)
+			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
 				break;
 			gwcopy(gwdata, x, u0);
 			recovery_bit = bits;
@@ -12505,7 +12528,7 @@ restart:
 	}
 	else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+		stopping = buildCertificate(total, s, a, recoverypoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -12528,7 +12551,7 @@ restart:
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".crt");
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -12564,7 +12587,7 @@ restart:
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -12590,19 +12613,19 @@ restart:
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, &bits, u0, NULL))
+			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
 				break;
 			}
 		}
-		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, d, NULL) && (recovery_bit < bits))
+		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
 		{
 			recovery_bit = bits;
 			gwcopy(gwdata, d, u0);
 		}
 	}
-	else if (echkGerbicz && fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, &bits, u0, NULL))
+	else if (echkGerbicz && fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
 	{
 		recovery_bit = bits;
 	}
@@ -12633,7 +12656,7 @@ restart:
 		lasterr_point = 0;
 		if (echkGerbicz)
 		{
-			if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, 1, u0, NULL)) {
+			if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, fingerprint, 1, u0, NULL)) {
 				sprintf(buf, WRITEFILEERR, recoverypoint);
 				OutputBoth(buf);
 			}
@@ -12641,7 +12664,7 @@ restart:
 			{
 				IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 				sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
-				if (!writeToFileMD5(gwdata, gdata, proofpoint, 1, u0, NULL)) {
+				if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, 1, u0, NULL)) {
 					sprintf(buf, WRITEFILEERR, proofpoint);
 					OutputError(buf);
 					goto error;
@@ -12663,7 +12686,7 @@ restart:
 		L /= 2;
 		L2 = L*L;
 	}
-	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, &bits, x, d) && (!echkGerbicz || ((bits > bit) && (bits < bit + L2))))
+	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (!echkGerbicz || ((bits > bit) && (bits < bit + L2))))
 	{
 		bit = bits;
 		if (!echkGerbicz)
@@ -12859,7 +12882,7 @@ restart:
 					{
 						IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 						sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-						if (!writeToFileMD5(gwdata, gdata, proofpoint, recovery_bit, u0, NULL)) {
+						if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL)) {
 							sprintf(buf, WRITEFILEERR, proofpoint);
 							OutputError(buf);
 							goto error;
@@ -12963,7 +12986,7 @@ restart:
 			saving = FALSE;
 			if (saved_recovery_bit < recovery_bit)
 			{
-				if (!writeToFile(gwdata, gdata, recoverypoint, recovery_bit, u0, NULL)) {
+				if (!writeToFile(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 					sprintf(buf, WRITEFILEERR, recoverypoint);
 					OutputBoth(buf);
 					if (write_time > 600) write_time = 600;
@@ -12975,7 +12998,7 @@ restart:
 						IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 				}
 			}
-			if ((saved_recovery_bit == recovery_bit) && ! writeToFile (gwdata, gdata, checkpoint, bit, x, d)) {
+			if ((saved_recovery_bit == recovery_bit) && ! writeToFile (gwdata, gdata, checkpoint, fingerprint, bit, x, d)) {
 				sprintf (buf, WRITEFILEERR, checkpoint);
 				OutputBoth (buf);
 				if (write_time > 600) write_time = 600;
@@ -13014,7 +13037,7 @@ restart:
 			char	interimfile[20];
 			sprintf (interimfile, "%.8s.%03lu",
 				checkpoint, bit / interimFiles);
-			if (! writeToFile (gwdata, gdata, interimfile, bit, x, NULL)) {
+			if (! writeToFile (gwdata, gdata, interimfile, fingerprint, bit, x, NULL)) {
 				sprintf (buf, WRITEFILEERR, interimfile);
 				OutputBoth (buf);
 			}
