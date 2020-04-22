@@ -12836,7 +12836,10 @@ restart:
 				gwsub(gwdata, d, check_d);
 				//gwmul_carefully(gwdata, u0, d);
 				//gwsub(gwdata, x, d);
-				if (gwiszero(gwdata, d) || !gwiszero(gwdata, check_d))
+			    gwtogiant(gwdata, d, tmp);
+			    gwtogiant(gwdata, check_d, tmp2);
+			    if (isZero(tmp) || !isZero(tmp2))
+				//if (gwiszero(gwdata, d) || !gwiszero(gwdata, check_d))
 				//if (!gwiszero(gwdata, d))
 				{
 					clearline(100);
