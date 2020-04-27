@@ -9314,14 +9314,10 @@ int findgbpf (giant gbase) {		// find all prime factors of a large integer base
 			gbpf[i] = newgiant(2*abs(gbase->sign) + 8);
 			gtog(b, gbpf[i]);
 			free(b);
-            if ((bitlen(gbpf[i-1]) <= 40) && (bitlen(gbpf[i]) <= 40))
-                return TRUE;				// The two factors are prime !
-            else {
-                if ((gaprcltest(gbpf[i-1], FALSE, APRTCLE_VERBOSE0) == APRTCLE_PRIME) && (gaprcltest(gbpf[i], FALSE, APRTCLE_VERBOSE0) == APRTCLE_PRIME))
-                    return TRUE;			// The two factors are prime !
-                else
-                    return FALSE;			// The factors must be factorized further...
-            }
+            if (((bitlen(gbpf[i-1]) <= 40) || (gaprcltest(gbpf[i-1], FALSE, APRTCLE_VERBOSE0) == APRTCLE_PRIME)) && ((bitlen(gbpf[i]) <= 40) || (gaprcltest(gbpf[i], FALSE, APRTCLE_VERBOSE0) == APRTCLE_PRIME)))
+                return TRUE;			// The two factors are prime !
+            else
+                return FALSE;			// The factors must be factorized further...
         }
 	}
 }
