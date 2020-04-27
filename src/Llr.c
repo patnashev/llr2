@@ -6255,14 +6255,15 @@ int gerbiczPRP(
 
 	s = IniGetInt(INI_FILE, "ProofCount", 16);
 	L = (unsigned long)sqrt(total/s);
-	if (total/s < L*L)
-		L--;
-	if (total/s - L*L >= 2*L + 1)
-		L++;
-	if (L == 0)
-		L = 1;
-	L = IniGetInt(INI_FILE, "GerbiczL", L);
-	L2 = L*L;
+    L2 = total/s/L*L;
+    for (bit = L + 1; bit*bit < 2*total/s; bit++)
+        if (L2 < total/s/bit*bit)
+        {
+            L = bit;
+            L2 = total/s/bit*bit;
+        }
+    L = IniGetInt(INI_FILE, "GerbiczL", L);
+    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2);
 	M = IniGetInt(INI_FILE, "AtnashevM", L2);
 
 	K = IniGetInt(INI_FILE, "SlidingWindow", 5);
@@ -6511,10 +6512,7 @@ int gerbiczPRP(
 
 	/* Output a message about the FFT length */
 
-	if (PROOFMODE[0])
-		sprintf(buf, "Using %s, a = %lu, M = %lu\n", fft_desc, a, M);
-	else
-		sprintf(buf, "Using %s, a = %lu\n", fft_desc, a);
+	sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
 
 	OutputStr(buf);
 	if (verbose || restarting) {
@@ -12483,14 +12481,15 @@ restart:
 
 	s = IniGetInt(INI_FILE, "ProofCount", 16);
 	L = (unsigned long)sqrt(total/s);
-	if (total/s < L*L)
-		L--;
-	if (total/s - L*L >= 2*L + 1)
-		L++;
-	if (L == 0)
-		L = 1;
-	L = IniGetInt(INI_FILE, "GerbiczL", L);
-	L2 = L*L;
+    L2 = total/s/L*L;
+    for (bit = L + 1; bit*bit < 2*total/s; bit++)
+        if (L2 < total/s/bit*bit)
+        {
+            L = bit;
+            L2 = total/s/bit*bit;
+        }
+    L = IniGetInt(INI_FILE, "GerbiczL", L);
+    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2);
 	M = IniGetInt(INI_FILE, "AtnashevM", L2);
 
 	recovery_bit = 0;
@@ -12649,7 +12648,6 @@ restart:
 		recovery_bit = 1;
 		bit = recovery_bit;
 		saved_recovery_bit = recovery_bit;
-		lasterr_point = 0;
 		if (echkGerbicz)
 		{
 			if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, fingerprint, 1, u0, NULL)) {
@@ -12737,8 +12735,8 @@ restart:
 
 /* Output a message about the FFT length and the Proth base. */
 
-	if (PROOFMODE[0])
-		sprintf(buf, "Using %s, a = %lu, M = %lu\n", fft_desc, a, M);
+	if (echkGerbicz)
+		sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
 	else
 		sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
 
