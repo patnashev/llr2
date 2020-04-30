@@ -6193,7 +6193,7 @@ int addErrorPoint(unsigned long ops)
     return TRUE;
 }
 
-int gerbiczPRP(
+int multipointPRP(
 	giant gb,
 	unsigned long n,		/* n in k*b^n+c */
 	signed long c,			/* c in k*b^n+c */
@@ -6214,7 +6214,7 @@ int gerbiczPRP(
 	char	checkpoint[20], recoverypoint[20], proofpoint[64], buf[sgkbufsize + 256], fft_desc[256];
     uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
-	int	echk, saving, stopping;
+	int	echk, saving, stopping, retval;
 	time_t	start_time, current_time;
 	double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
@@ -6242,29 +6242,30 @@ int gerbiczPRP(
 	tempFileName(checkpoint, 'z', N);
 	tempFileName(recoverypoint, 'r', N);
 
-	/* Allocate memory */
+/* Compute Gerbicz and Atnashev parameters */
+
+    s = IniGetInt(INI_FILE, "ProofCount", 16);
+    bits = total/s/IniGetInt(INI_FILE, "L2PerPoint", 1);
+    iters = bits/IniGetInt(INI_FILE, "PointsPerL2", 1);
+    L = (unsigned long)sqrt(iters);
+    L2 = bits - bits%L;
+    for (bit = L - 1; 2*bit*bit > iters; bit--)
+        if (L2 < bits - bits%bit)
+        {
+            L = bit;
+            L2 = bits - bits%bit;
+        }
+    M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
+    L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
+    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+
+/* Allocate memory */
 
 	x = gwalloc(gwdata);
 
 	d = gwalloc(gwdata);
 	check_d = gwalloc(gwdata);
 	u0 = gwalloc(gwdata);
-
-	/* Optionally resume from save file and output a message */
-	/* indicating we are resuming a test */
-
-	s = IniGetInt(INI_FILE, "ProofCount", 16);
-	L = (unsigned long)sqrt(total/s);
-    L2 = total/s/L*L;
-    for (bit = L + 1; bit*bit < 2*total/s; bit++)
-        if (L2 < total/s/bit*bit)
-        {
-            L = bit;
-            L2 = total/s/bit*bit;
-        }
-    L = IniGetInt(INI_FILE, "GerbiczL", L);
-    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2);
-	M = IniGetInt(INI_FILE, "AtnashevM", L2);
 
 	K = IniGetInt(INI_FILE, "SlidingWindow", 5);
 	if (gb->sign == 1 && gb->n[0] == 2)
@@ -6273,35 +6274,38 @@ int gerbiczPRP(
 	for (i = 0; i < (1 << (K - 1)); i++)
 		u[i] = gwalloc(gwdata);
 
+/* Optionally resume from save file and output a message */
+/* indicating we are resuming a test */
+
 	recovery_bit = 0;
 	ops = 0;
 	if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
+        total = 0;
 		for (bit = 0; bit/M <= s; bit += M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
-				break;
-			gwcopy(gwdata, x, u0);
-			recovery_bit = bits;
+                total = bit + 1;
+            if (bit%L2 == 0)
+            {
+                if (total != 0)
+                    break;
+                gwcopy(gwdata, x, u0);
+                recovery_bit = bits;
+            }
 		}
-		if (bit/M > s)
+		if (total == 0)
 		{
-			pushg(gdata, 3);
-			for (i = 0; i < (1 << (K - 1)); i++)
-				gwfree(gwdata, u[i]);
-			free(u);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
 			_unlink(checkpoint);
 			_unlink(recoverypoint);
 			*res = FALSE;
-			return TRUE;
+			retval = TRUE;
+            goto cleanup;
 		}
-	}
+        total--;
+    }
 	else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
 		stopping = buildCertificate(total, s, a, recoverypoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
@@ -6309,17 +6313,10 @@ int gerbiczPRP(
 		{
 			if (stopping == FALSE)
 				goto error;
-			pushg(gdata, 3);
-			for (i = 0; i < (1 << (K - 1)); i++)
-				gwfree(gwdata, u[i]);
-			free(u);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
 			*res = FALSE;
-			return (stopping == TRUE);
-		}
+			retval = (stopping == TRUE);
+            goto cleanup;
+        }
         strcpy(PROOFMODE, "VerifyRes");
     }
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
@@ -6331,29 +6328,12 @@ int gerbiczPRP(
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
 
-			pushg(gdata, 3);
-			for (i = 0; i < (1 << (K - 1)); i++)
-				gwfree(gwdata, u[i]);
-			free(u);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
 			*res = FALSE;
-			return FALSE;
-		}
+            retval = FALSE;
+            goto cleanup;
+        }
 		recovery_bit = 1;
 		total = bits;
-		L = (unsigned long)sqrt(total);
-		if (total < L*L)
-			L--;
-		if (total - L*L >= 2*L + 1)
-			L++;
-		if (L == 0)
-			L = 1;
-		L = IniGetInt(INI_FILE, "GerbiczL", L);
-		L2 = L*L;
-		M = IniGetInt(INI_FILE, "AtnashevM", L2);
 		clear_timer(1);
 		checkpoint[0] = 'v';
 	}
@@ -6366,23 +6346,16 @@ int gerbiczPRP(
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
 
-			pushg(gdata, 3);
-			for (i = 0; i < (1 << (K - 1)); i++)
-				gwfree(gwdata, u[i]);
-			free(u);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
 			*res = FALSE;
-			return FALSE;
-		}
+            retval = FALSE;
+            goto cleanup;
+        }
 		recovery_bit = bits;
 		clear_timer(1);
 	}
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (bit = s*M; (long)bit >= 0; bit -= M)
+		for (bit = s*M; (long)bit >= 0; bit -= L2)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
@@ -6443,16 +6416,9 @@ int gerbiczPRP(
 			}
 			if (!strcmp(PROOFMODE, "RedoMissing"))
 			{
-				pushg(gdata, 3);
-				for (i = 0; i < (1 << (K - 1)); i++)
-					gwfree(gwdata, u[i]);
-				free(u);
-				gwfree(gwdata, u0);
-				gwfree(gwdata, check_d);
-				gwfree(gwdata, d);
-				gwfree(gwdata, x);
-				return (-1);
-			}
+                retval = (-1);
+                goto cleanup;
+            }
 		}
 	}
 	while ((total - recovery_bit + 1) < L2 && L > 1)
@@ -6512,7 +6478,10 @@ int gerbiczPRP(
 
 	/* Output a message about the FFT length */
 
-	sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
+    if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing"))
+        sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
+    else
+        sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
 
 	OutputStr(buf);
 	if (verbose || restarting) {
@@ -6712,16 +6681,9 @@ int gerbiczPRP(
 					IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 					io_reset(recoverypoint);
 
-                    pushg(gdata, 3);
-                    for (i = 0; i < (1 << (K - 1)); i++)
-                        gwfree(gwdata, u[i]);
-                    free(u);
-                    gwfree(gwdata, u0);
-                    gwfree(gwdata, check_d);
-                    gwfree(gwdata, d);
-                    gwfree(gwdata, x);
                     *res = FALSE;
-                    return (FALSE);
+                    retval = FALSE;
+                    goto cleanup;
                 }
 				restarting = TRUE;
 				goto error;
@@ -6747,32 +6709,6 @@ int gerbiczPRP(
 					power(gexp, L);
 					explen = bitlen(gexp);
 				}
-
-				if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
-				{
-                    IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-					sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-					if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL)) {
-						sprintf(buf, WRITEFILEERR, proofpoint);
-						OutputError(buf);
-						goto error;
-					}
-					saved_recovery_bit = recovery_bit;
-                    if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
-                        IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
-                    if (!strcmp(PROOFMODE, "RedoMissing"))
-					{
-						pushg(gdata, 3);
-						for (i = 0; i < (1 << (K - 1)); i++)
-							gwfree(gwdata, u[i]);
-						free(u);
-						gwfree(gwdata, u0);
-						gwfree(gwdata, check_d);
-						gwfree(gwdata, d);
-						gwfree(gwdata, x);
-						return (-1);
-					}
-				}
 			}
 		}
 		else
@@ -6782,6 +6718,28 @@ int gerbiczPRP(
 			CHECK_IF_ANY_ERROR(d, (ops), bit, 5);
 			ops++;
 		}
+
+        if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
+        {
+            IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
+            if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, bit, x, NULL)) {
+                sprintf(buf, WRITEFILEERR, proofpoint);
+                OutputError(buf);
+                goto error;
+            }
+            if (recovery_bit == bit)
+            {
+                saved_recovery_bit = recovery_bit;
+                if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
+                    IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+            }
+            if (!strcmp(PROOFMODE, "RedoMissing") && bit - 1 == total)
+            {
+                retval = (-1);
+                goto cleanup;
+            }
+        }
 
 		/* That iteration succeeded, bump counters */
 
@@ -6870,17 +6828,10 @@ int gerbiczPRP(
 			/* If an escape key was hit, write out the results and return */
 
 			if (stopping) {
-				pushg(gdata, 3);
-				for (i = 0; i < (1 << (K - 1)); i++)
-					gwfree(gwdata, u[i]);
-				free(u);
-				gwfree(gwdata, u0);
-				gwfree(gwdata, check_d);
-				gwfree(gwdata, d);
-				gwfree(gwdata, x);
 				*res = FALSE;
-				return (FALSE);
-			}
+                retval = FALSE;
+                goto cleanup;
+            }
 		}
 	}
 
@@ -6934,7 +6885,7 @@ int gerbiczPRP(
 	/* PFGW fame automates his QA scripts by parsing this line. */
 
 	pushg(gdata, 3);
-	for (i = 0; i < (1 << (K - 1)); i++)
+    for (i = 0; i < (1 << (K - 1)); i++)
 		gwfree(gwdata, u[i]);
 	free(u);
 	gwfree(gwdata, u0);
@@ -6999,7 +6950,7 @@ int gerbiczPRP(
 
 error:
 	pushg(gdata, 3);
-	for (i = 0; i < (1 << (K - 1)); i++)
+    for (i = 0; i < (1 << (K - 1)); i++)
 		gwfree(gwdata, u[i]);
 	free(u);
 	gwfree(gwdata, u0);
@@ -7044,6 +6995,17 @@ error:
         clearErrorPoints();
 	}
 	return (-1);
+
+cleanup:
+    pushg(gdata, 3);
+    for (i = 0; i < (1 << (K - 1)); i++)
+        gwfree(gwdata, u[i]);
+    free(u);
+    gwfree(gwdata, u0);
+    gwfree(gwdata, check_d);
+    gwfree(gwdata, d);
+    gwfree(gwdata, x);
+    return retval;
 }
 
 /* Test for 2*N+1 prime, knowing that N is prime -- gwsetup has already been called. */
@@ -7913,7 +7875,7 @@ restart:
 /* Do the PRP test */
 
 		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE[0])
-			retval = gerbiczPRP(gb, n, c, gwdata, gdata, a, res, str);
+			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
 		gwdone (gwdata);
@@ -8382,7 +8344,7 @@ restart:
 /* Do the PRP test */
 
 		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE[0])
-			retval = gerbiczPRP(gb, n, c, gwdata, gdata, a, res, str);
+			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
 		gwdone (gwdata);
@@ -12273,7 +12235,6 @@ int isProthP(
 
 	Nlen = bitlen(N);
 	klen = bitlen(gk);
-	total = n - 1;
     fingerprint = gmodul(N, 3417905339);
 
     if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
@@ -12416,6 +12377,7 @@ restart:
 	gwsetmaxmulbyconst(gwdata, a);
 
 	p = Nlen;
+    total = n - 1;
 
 	*res = TRUE;						/* Assume it is a prime */
 
@@ -12461,12 +12423,29 @@ restart:
 		Nlen = bitlen (tmp);*/
 
 
-		/* Init filename */
+	/* Init filename */
 
 	tempFileName(checkpoint, 'z', N);
 	tempFileName(recoverypoint, 'r', N);
 
-	/* Get the current time */
+    /* Compute Gerbicz and Atnashev parameters */
+
+    s = IniGetInt(INI_FILE, "ProofCount", 16);
+    bits = total/s/IniGetInt(INI_FILE, "L2PerPoint", 1);
+    iters = bits/IniGetInt(INI_FILE, "PointsPerL2", 1);
+    L = (unsigned long)sqrt(iters);
+    L2 = bits - bits%L;
+    for (bit = L - 1; 2*bit*bit > iters; bit--)
+        if (L2 < bits - bits%bit)
+        {
+            L = bit;
+            L2 = bits - bits%bit;
+        }
+    M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
+    L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
+    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+
+    /* Get the current time */
 	/* Allocate memory */
 
 	x = gwalloc(gwdata);
@@ -12476,50 +12455,36 @@ restart:
 
 	u0 = gwalloc(gwdata);
 
-	/* Optionally resume from save file and output a message */
-	/* indicating we are resuming a test */
+    /* Optionally resume from save file and output a message */
+    /* indicating we are resuming a test */
 
-	s = IniGetInt(INI_FILE, "ProofCount", 16);
-	L = (unsigned long)sqrt(total/s);
-    L2 = total/s/L*L;
-    for (bit = L + 1; bit*bit < 2*total/s; bit++)
-        if (L2 < total/s/bit*bit)
-        {
-            L = bit;
-            L2 = total/s/bit*bit;
-        }
-    L = IniGetInt(INI_FILE, "GerbiczL", L);
-    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2);
-	M = IniGetInt(INI_FILE, "AtnashevM", L2);
-
-	recovery_bit = 0;
+    recovery_bit = 0;
 	if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
+        total = 0;
 		for (bit = 0; bit/M <= s; bit += M)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
 			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
-				break;
-			gwcopy(gwdata, x, u0);
-			recovery_bit = bits;
+				total = bit + 1;
+            if (bit%L2 == 0)
+            {
+                if (total != 0)
+                    break;
+                gwcopy(gwdata, x, u0);
+                recovery_bit = bits;
+            }
 		}
-		if (bit/M > s)
+		if (total == 0)
 		{
-			pushg(gdata, 2);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
-			free(gk);
-			free(N);
-			gwdone(gwdata);
-			free(gwdata);
 			_unlink(checkpoint);
 			_unlink(recoverypoint);
 			*res = FALSE;
-			return TRUE;
+            retval = TRUE;
+			goto cleanup;
 		}
+        total--;
 	}
 	else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
@@ -12528,17 +12493,9 @@ restart:
 		{
 			if (stopping == FALSE)
 				goto error;
-			pushg(gdata, 2);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
-			free(gk);
-			free(N);
-			gwdone(gwdata);
-			free(gwdata);
 			*res = FALSE;
-			return (stopping == TRUE);
+            retval = (stopping == TRUE);
+            goto cleanup;
 		}
         strcpy(PROOFMODE, "VerifyRes");
 	}
@@ -12551,30 +12508,12 @@ restart:
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
 
-			pushg(gdata, 2);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
-			free(gk);
-			free(N);
-			gwdone(gwdata);
-			free(gwdata);
 			*res = FALSE;
-			return FALSE;
-		}
+            retval = FALSE;
+            goto cleanup;
+        }
 		recovery_bit = 1;
 		total = bits;
-		L = (unsigned long)sqrt(total);
-		if (total < L*L)
-			L--;
-		if (total - L*L >= 2*L + 1)
-			L++;
-		if (L == 0)
-			L = 1;
-		L = IniGetInt(INI_FILE, "GerbiczL", L);
-		L2 = L*L;
-		M = IniGetInt(INI_FILE, "AtnashevM", L2);
 		clear_timer(1);
 		checkpoint[0] = 'v';
 	}
@@ -12587,24 +12526,16 @@ restart:
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
 
-			pushg(gdata, 2);
-			gwfree(gwdata, u0);
-			gwfree(gwdata, check_d);
-			gwfree(gwdata, d);
-			gwfree(gwdata, x);
-			free(gk);
-			free(N);
-			gwdone(gwdata);
-			free(gwdata);
 			*res = FALSE;
-			return FALSE;
-		}
+            retval = FALSE;
+            goto cleanup;
+        }
 		recovery_bit = bits;
 		clear_timer(1);
 	}
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (bit = s*M; (long)bit >= 0; bit -= M)
+		for (bit = s*M; (long)bit >= 0; bit -= L2)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
@@ -12735,7 +12666,9 @@ restart:
 
 /* Output a message about the FFT length and the Proth base. */
 
-	if (echkGerbicz)
+    if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing"))
+        sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
+    else if (echkGerbicz)
 		sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
 	else
 		sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
@@ -12750,17 +12683,9 @@ restart:
 			writeError(buf);
 			OLDFFTLEN = gwdata->FFTLEN;
 		}
-		pushg(gdata, 2);
-		gwfree(gwdata, u0);
-		gwfree(gwdata, check_d);
-		gwfree(gwdata, d);
-		gwfree(gwdata, x);
-		free(gk);
-		free(N);
-		gwdone (gwdata);
 		*res = FALSE;
-		free (gwdata);
-		return (!stopping);
+        retval = (!stopping);
+        goto cleanup;
 	}
 	else if (verbose || restarting) {
 		writeError(buf);
@@ -12791,7 +12716,7 @@ restart:
 
 		gwstartnextfft (gwdata, postfft && !debug && !stopping && !saving && bit != lasterr_point && !((interimFiles && (bit+1) % interimFiles == 0)) &&
 			!(interimResidues && ((bit+1) % interimResidues < 2)) && 
-			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && ((bit - recovery_bit + 1)%L2 != 0));
+			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && ((bit - recovery_bit + 1)%L2 != 0) && ((bit%M) != 0));
 
 		gwsetnormroutine (gwdata, 0, echk, 0);
 
@@ -12848,17 +12773,9 @@ restart:
                         IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 						io_reset(recoverypoint);
 
-                        pushg(gdata, 2);
-                        gwfree(gwdata, u0);
-                        gwfree(gwdata, check_d);
-                        gwfree(gwdata, d);
-                        gwfree(gwdata, x);
-                        free(gk);
-                        free(N);
-                        gwdone(gwdata);
                         *res = FALSE;		// To avoid credit message !
-                        free(gwdata);
-                        return (FALSE);
+                        retval = FALSE;
+                        goto cleanup;
                     }
 					restarting = TRUE;
 					goto error;
@@ -12874,28 +12791,6 @@ restart:
 					{
 						L /= 2;
 						L2 = L*L;
-					}
-					if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
-					{
-						IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-						sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-						if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL)) {
-							sprintf(buf, WRITEFILEERR, proofpoint);
-							OutputError(buf);
-							goto error;
-						}
-						saved_recovery_bit = recovery_bit;
-                        if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
-                            IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
-                        if (!strcmp(PROOFMODE, "RedoMissing"))
-						{
-							pushg(gdata, 2);
-							gwfree(gwdata, u0);
-							gwfree(gwdata, check_d);
-							gwfree(gwdata, d);
-							gwfree(gwdata, x);
-							goto restart;
-						}
 					}
 				}
 			}
@@ -12913,6 +12808,32 @@ restart:
 				CHECK_IF_ANY_ERROR(d, (bit), n, 5);
 			}
 		}
+
+        if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
+        {
+            IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
+            if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, bit + 1, x, NULL)) {
+                sprintf(buf, WRITEFILEERR, proofpoint);
+                OutputError(buf);
+                goto error;
+            }
+            if (recovery_bit == bit + 1)
+            {
+                saved_recovery_bit = recovery_bit;
+                if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
+                    IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+            }
+            if (!strcmp(PROOFMODE, "RedoMissing") && bit == total)
+            {
+                pushg(gdata, 2);
+                gwfree(gwdata, u0);
+                gwfree(gwdata, check_d);
+                gwfree(gwdata, d);
+                gwfree(gwdata, x);
+                goto restart;
+            }
+        }
 
 		//if (bit == n-1)
 			//gwtogiant(gwdata, x, tmp);
@@ -13007,18 +12928,10 @@ restart:
 /* If an escape key was hit, write out the results and return */
 
 			if (stopping) {
-				pushg(gdata, 2);
-				gwfree(gwdata, u0);
-				gwfree(gwdata, check_d);
-				gwfree(gwdata, d);
-				gwfree(gwdata, x);
-				free(gk);
-				free(N);
-				gwdone (gwdata);
 				*res = FALSE;		// To avoid credit message !
-				free (gwdata);
-				return (FALSE);
-			}
+                retval = FALSE;
+                goto cleanup;
+            }
 		}
 
 /* Output the 64-bit residue at specified interims.  Also output the */
@@ -13172,6 +13085,18 @@ error:
 			abonroundoff = TRUE;	// Don't accept any more Roundoff error.
 	}
 	goto restart;
+
+cleanup:
+    pushg(gdata, 2);
+    gwfree(gwdata, u0);
+    gwfree(gwdata, check_d);
+    gwfree(gwdata, d);
+    gwfree(gwdata, x);
+    free(gk);
+    free(N);
+    gwdone(gwdata);
+    free(gwdata);
+    return retval;
 } 
 
 #define LOWFACTORLIMIT 10000	// To factor lower exponent candidates is not useful...
