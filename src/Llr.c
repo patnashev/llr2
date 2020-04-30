@@ -5860,6 +5860,249 @@ error:
 	return (-1);
 }
 
+gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, unsigned long i, unsigned long M, gwnum *points, gwnum r)
+{
+    unsigned long bits;
+
+    if (points != NULL && points[i] != NULL)
+        return points[i];
+
+    IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+    sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+    if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, r, NULL) || (bits != i*M + 1))
+    {
+        sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+        OutputError(buf);
+        return NULL;
+    }
+    return r;
+}
+
+void hash_giant(giant gin, giant gout)
+{
+    MD5_CTX context;
+    MD5Init(&context);
+    MD5Update(&context, (unsigned char *)gin->n, abs(gin->sign)*4);
+    MD5Final((unsigned char *)gout->n, &context);
+    gout->sign = 2;
+    if (gout->n[1] == 0)
+        gout->sign = 1;
+}
+
+void make_prime(giant g)
+{
+    int j;
+    g->n[0] |= 1;
+    if (g->sign == 0)
+        g->sign = 1;
+    if (g->sign == 1 && g->n[0] == 1)
+        g->n[0] = 3;
+    while (1)
+    {
+        for (j = 0; j < 168 && gmodul(g, smallprime[j]) != 0; j++);
+        if (j == 168)
+            break;
+        uladdg(2, g);
+    }
+}
+
+int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp)
+{
+    unsigned long t, i, j, k;
+    unsigned long bit, len;
+    char	proofpoint[64], buf[sgkbufsize+256];
+    int	saving;
+    gwnum r;
+    giant h[32];
+    double	reallyminerr = 1.0;
+    double	reallymaxerr = 0.0;
+    double timer0;
+    double timer1;
+
+    start_timer(0);
+    timer0 = timers[0];
+    end_timer(1);
+    timer1 = timers[1];
+
+    for (t = 1; (1UL << t) < s; t++);
+    if ((1 << t) != s)
+    {
+        sprintf(buf, "ProofCount is not a power of 2.\n");
+        OutputError(buf);
+        return -1;
+    }
+    if (t > 31)
+    {
+        sprintf(buf, "ProofCount is too big.\n");
+        OutputError(buf);
+        return -1;
+    }
+
+    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s, M, points, u0)) == NULL)
+        return -1;
+    gwcopy(gwdata, r, x);
+
+    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s/2, M, points, u0)) == NULL)
+        return -1;
+    gwcopy(gwdata, r, d);
+
+    IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+    sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
+    if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, 0, d, NULL)) {
+        sprintf(buf, WRITEFILEERR, proofpoint);
+        OutputError(buf);
+        return FALSE;
+    }
+
+    gwsetnormroutine(gwdata, 0, 1, 0);
+
+    for (k = 1; k < t; k++)
+        h[k] = NULL;
+    for (i = 1; i < t; i++)
+    {
+        h[i] = allocgiant(4);
+        gwtogiant(gwdata, x, tmp);
+        hash_giant(tmp, h[i]);
+        make_prime(h[i]);
+
+        if (i < t - 1)
+        {
+            gtog(h[i], tmp);
+            gwcopy(gwdata, d, check_d);
+            bit = 1;
+            len = bitlen(tmp);
+            while (bit < len) {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
+                    gwsquare(gwdata, d);
+                    care = FALSE;
+                }
+                else {
+                    gwsquare_carefully(gwdata, d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(d, (bit), len, 1);
+
+                if (bitval(tmp, len - bit - 1))
+                {
+                    if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
+                        gwsafemul(gwdata, check_d, d);
+                        care = FALSE;
+                    }
+                    else {
+                        gwmul_carefully(gwdata, check_d, d);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(d, (bit), len, 2);
+                }
+                bit++;
+            }
+
+            if ((i != lasterr_point) || !maxerr_recovery_mode[3]) {
+                gwsafemul(gwdata, d, x);
+                care = FALSE;
+            }
+            else {
+                gwmul_carefully(gwdata, d, x);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(x, (i), t, 3);
+        }
+
+        for (j = 0; j < (1UL << i); j++)
+        {
+            ultog(1, tmp);
+            for (k = 0; k < i; k++)
+                if ((j & (1 << k)) == 0)
+                    mulg(h[i - k], tmp);
+            if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, (1 + j*2) << (t - i - 1), M, points, u0)) == NULL)
+            {
+                for (k = 1; k <= i; k++)
+                    free(h[k]);
+                return -1;
+            }
+            gwcopy(gwdata, r, check_d);
+
+            bit = 1;
+            len = bitlen(tmp);
+            while (bit < len) {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
+                    gwsquare(gwdata, check_d);
+                    care = FALSE;
+                }
+                else {
+                    gwsquare_carefully(gwdata, check_d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(check_d, (bit), len, 4);
+
+                if (bitval(tmp, len - bit - 1))
+                {
+                    if ((bit != lasterr_point) || !maxerr_recovery_mode[5]) {
+                        gwsafemul(gwdata, r, check_d);
+                        care = FALSE;
+                    }
+                    else {
+                        gwmul_carefully(gwdata, r, check_d);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(check_d, (bit), len, 5);
+                }
+                bit++;
+            }
+
+            if (j == 0)
+                gwcopy(gwdata, check_d, d);
+            else
+            {
+                if ((i != lasterr_point) || !maxerr_recovery_mode[6]) {
+                    gwsafemul(gwdata, check_d, d);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, check_d, d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(d, (j), (1 << i), 6);
+            }
+
+            IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+            if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, i, d, NULL)) {
+                sprintf(buf, WRITEFILEERR, proofpoint);
+                OutputError(buf);
+                return FALSE;
+            }
+        }
+    }
+    for (k = 1; k < t; k++)
+        free(h[k]);
+
+    sprintf(buf, "Compressed %lu points to %lu products.  Time : ", s, t);
+    start_timer(0);
+    timers[0] = timer0;
+    end_timer(0);
+    write_timer(buf+strlen(buf), 0, TIMER_CLR | TIMER_NL);
+    OutputStr(buf);
+    timers[1] = timer1;
+    start_timer(1);
+
+    if (IniGetInt(INI_FILE, "DeletePoints", 0))
+        for (i = 1; i < s; i++)
+        {
+            IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+            _unlink(proofpoint);
+        }
+
+    return TRUE;
+
+error:
+    for (k = 1; k < t; k++)
+        if (h[k] != NULL)
+            free(h[k]);
+    return FALSE;
+}
+
 struct mt_state {
 	unsigned long mt[624]; /* the array for the state vector */
 	int mti;
@@ -5903,12 +6146,12 @@ void grnd(struct mt_state *x, int bits, giant a)
 		a->sign--;
 }
 
-int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
+int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
-	unsigned long bit, i, len, M;
+	unsigned long bit, i, j, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256];
 	int	saving;
-	double	reallyminerr = 1.0;
+    double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
 	double timer1;
 	struct mt_state rnd;
@@ -5971,151 +6214,350 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 
 	gwsetnormroutine(gwdata, 0, 1, 0);
 
-	tmp->sign = 0;
-	while (isZero(tmp))
-		grnd(&rnd, 64, tmp);
+    if (!IniGetInt(INI_FILE, "Pietrzak", 0))
+    {
+        tmp->sign = 0;
+        while (isZero(tmp))
+            grnd(&rnd, 64, tmp);
 
-	bit = 1;
-	len = bitlen(tmp);
-	while (bit < len) {
-		if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
-			gwsquare(gwdata, d);
-			care = FALSE;
-		}
-		else {
-			gwsquare_carefully(gwdata, d);
-			care = TRUE;
-		}
-		CHECK_IF_ANY_ERROR(d, (bit), len, 1);
+        bit = 1;
+        len = bitlen(tmp);
+        while (bit < len) {
+            if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
+                gwsquare(gwdata, d);
+                care = FALSE;
+            }
+            else {
+                gwsquare_carefully(gwdata, d);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(d, (bit), len, 1);
 
-		if (bitval(tmp, len - bit - 1))
-		{
-			if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
-				gwsafemul(gwdata, u0, d);
-				care = FALSE;
-			}
-			else {
-				gwmul_carefully(gwdata, u0, d);
-				care = TRUE;
-			}
-			CHECK_IF_ANY_ERROR(d, (bit), len, 2);
-		}
-		bit++;
-	}
+            if (bitval(tmp, len - bit - 1))
+            {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
+                    gwsafemul(gwdata, u0, d);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, u0, d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(d, (bit), len, 2);
+            }
+            bit++;
+        }
 
-	for (i = 1; i <= s; i++)
-	{
-		//OutputStr("i\n");
-		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-		sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i > 1 && i*M + 1 != *recovery_bit))
-		{
-			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
-			OutputError(buf);
-			return -1;
-		}
-		if (i == 1)
-		{
-			M = *recovery_bit - 1;
-			if (M <= 1 || s*M > n)
-			{
-				sprintf(buf, "Incorrect M.\n");
-				OutputError(buf);
-				return -1;
-			}
-		}
-		gwcopy(gwdata, u0, x);
+        for (i = 1; i <= s; i++)
+        {
+            //OutputStr("i\n");
+            IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+            if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i > 1 && i*M + 1 != *recovery_bit))
+            {
+                sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+                OutputError(buf);
+                return -1;
+            }
+            if (i == 1)
+            {
+                M = *recovery_bit - 1;
+                if (M <= 1 || s*M > n)
+                {
+                    sprintf(buf, "Incorrect M.\n");
+                    OutputError(buf);
+                    return -1;
+                }
+            }
+            gwcopy(gwdata, u0, x);
 
-		bit = 1;
-		len = bitlen(tmp);
-		while (bit < len) {
-			if ((bit != lasterr_point) || !maxerr_recovery_mode[3]) {
-				gwsquare(gwdata, x);
-				care = FALSE;
-			}
-			else {
-				gwsquare_carefully(gwdata, x);
-				care = TRUE;
-			}
-			CHECK_IF_ANY_ERROR(x, (bit), len, 3);
+            bit = 1;
+            len = bitlen(tmp);
+            while (bit < len) {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[3]) {
+                    gwsquare(gwdata, x);
+                    care = FALSE;
+                }
+                else {
+                    gwsquare_carefully(gwdata, x);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(x, (bit), len, 3);
 
-			if (bitval(tmp, len - bit - 1))
-			{
-				if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
-					gwsafemul(gwdata, u0, x);
-					care = FALSE;
-				}
-				else {
-					gwmul_carefully(gwdata, u0, x);
-					care = TRUE;
-				}
-				CHECK_IF_ANY_ERROR(x, (bit), len, 4);
-			}
-			bit++;
-		}
+                if (bitval(tmp, len - bit - 1))
+                {
+                    if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
+                        gwsafemul(gwdata, u0, x);
+                        care = FALSE;
+                    }
+                    else {
+                        gwmul_carefully(gwdata, u0, x);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(x, (bit), len, 4);
+                }
+                bit++;
+            }
 
-		if (i == 1)
-			gwcopy(gwdata, x, check_d);
-		else
-		{
-			if ((i != lasterr_point) || !maxerr_recovery_mode[5]) {
-				gwsafemul(gwdata, x, check_d);
-				care = FALSE;
-			}
-			else {
-				gwmul_carefully(gwdata, x, check_d);
-				care = TRUE;
-			}
-			CHECK_IF_ANY_ERROR(check_d, (i), s, 5);
-		}
+            if (i == 1)
+                gwcopy(gwdata, x, check_d);
+            else
+            {
+                if ((i != lasterr_point) || !maxerr_recovery_mode[5]) {
+                    gwsafemul(gwdata, x, check_d);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, x, check_d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(check_d, (i), s, 5);
+            }
 
-		if (i == s)
-			break;
+            if (i == s)
+                break;
 
-		tmp->sign = 0;
-		while (isZero(tmp))
-			grnd(&rnd, 64, tmp);
+            tmp->sign = 0;
+            while (isZero(tmp))
+                grnd(&rnd, 64, tmp);
 
-		gwcopy(gwdata, u0, x);
+            gwcopy(gwdata, u0, x);
 
-		bit = 1;
-		len = bitlen(tmp);
-		while (bit < len) {
-			if ((bit != lasterr_point) || !maxerr_recovery_mode[6]) {
-				gwsquare(gwdata, x);
-				care = FALSE;
-			}
-			else {
-				gwsquare_carefully(gwdata, x);
-				care = TRUE;
-			}
-			CHECK_IF_ANY_ERROR(x, (bit), len, 6);
+            bit = 1;
+            len = bitlen(tmp);
+            while (bit < len) {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[6]) {
+                    gwsquare(gwdata, x);
+                    care = FALSE;
+                }
+                else {
+                    gwsquare_carefully(gwdata, x);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(x, (bit), len, 6);
 
-			if (bitval(tmp, len - bit - 1))
-			{
-				if ((bit != lasterr_point) || !maxerr_recovery_mode[7]) {
-					gwsafemul(gwdata, u0, x);
-					care = FALSE;
-				}
-				else {
-					gwmul_carefully(gwdata, u0, x);
-					care = TRUE;
-				}
-				CHECK_IF_ANY_ERROR(x, (bit), len, 7);
-			}
-			bit++;
-		}
+                if (bitval(tmp, len - bit - 1))
+                {
+                    if ((bit != lasterr_point) || !maxerr_recovery_mode[7]) {
+                        gwsafemul(gwdata, u0, x);
+                        care = FALSE;
+                    }
+                    else {
+                        gwmul_carefully(gwdata, u0, x);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(x, (bit), len, 7);
+                }
+                bit++;
+            }
 
-		if ((i != lasterr_point) || !maxerr_recovery_mode[8]) {
-			gwsafemul(gwdata, x, d);
-			care = FALSE;
-		}
-		else {
-			gwmul_carefully(gwdata, x, d);
-			care = TRUE;
-		}
-		CHECK_IF_ANY_ERROR(d, (i), s, 8);
-	}
+            if ((i != lasterr_point) || !maxerr_recovery_mode[8]) {
+                gwsafemul(gwdata, x, d);
+                care = FALSE;
+            }
+            else {
+                gwmul_carefully(gwdata, x, d);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(d, (i), s, 8);
+        }
+    }
+    else
+    {
+        for (t = 1; (1UL << t) < s; t++);
+        if ((1 << t) != s)
+        {
+            sprintf(buf, "ProofCount is not a power of 2.\n");
+            OutputError(buf);
+            return -1;
+        }
+        if (t > 31)
+        {
+            sprintf(buf, "ProofCount is too big.\n");
+            OutputError(buf);
+            return -1;
+        }
+
+        IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+        sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
+        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL))
+        {
+            sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+            OutputError(buf);
+            return -1;
+        }
+        M = *recovery_bit - 1;
+        if (M <= 1 || M > n || M%s != 0)
+        {
+            sprintf(buf, "Incorrect M.\n");
+            OutputError(buf);
+            return -1;
+        }
+        M /= s;
+        gwcopy(gwdata, u0, check_d);
+
+        for (i = 0; i < t; i++)
+        {
+            gwtogiant(gwdata, check_d, tmp2);
+            hash_giant(tmp2, tmp);
+            make_prime(tmp);
+
+            gwcopy(gwdata, d, u0);
+            bit = 1;
+            len = bitlen(tmp);
+            while (bit < len) {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
+                    gwsquare(gwdata, d);
+                    care = FALSE;
+                }
+                else {
+                    gwsquare_carefully(gwdata, d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(d, (bit), len, 1);
+
+                if (bitval(tmp, len - bit - 1))
+                {
+                    if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
+                        gwsafemul(gwdata, u0, d);
+                        care = FALSE;
+                    }
+                    else {
+                        gwmul_carefully(gwdata, u0, d);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(d, (bit), len, 2);
+                }
+                bit++;
+            }
+
+            IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+            if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i != *recovery_bit))
+            {
+                sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+                OutputError(buf);
+                return -1;
+            }
+            gwcopy(gwdata, u0, x);
+
+            if ((i != lasterr_point) || !maxerr_recovery_mode[3]) {
+                gwsafemul(gwdata, u0, d);
+                care = FALSE;
+            }
+            else {
+                gwmul_carefully(gwdata, u0, d);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(d, (i), t, 3);
+
+            bit = 1;
+            while (bit < len) {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
+                    gwsquare(gwdata, x);
+                    care = FALSE;
+                }
+                else {
+                    gwsquare_carefully(gwdata, x);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(x, (bit), len, 4);
+
+                if (bitval(tmp, len - bit - 1))
+                {
+                    if ((bit != lasterr_point) || !maxerr_recovery_mode[5]) {
+                        gwsafemul(gwdata, u0, x);
+                        care = FALSE;
+                    }
+                    else {
+                        gwmul_carefully(gwdata, u0, x);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(x, (bit), len, 5);
+                }
+                bit++;
+            }
+
+            if ((i != lasterr_point) || !maxerr_recovery_mode[6]) {
+                gwsafemul(gwdata, x, check_d);
+                care = FALSE;
+            }
+            else {
+                gwmul_carefully(gwdata, x, check_d);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(check_d, (i), t, 6);
+        }
+
+        grnd(&rnd, 64, tmp);
+        make_prime(tmp);
+        len = bitlen(tmp);
+
+        gwcopy(gwdata, d, u0);
+        bit = 1;
+        while (bit < len) {
+            if ((bit != lasterr_point) || !maxerr_recovery_mode[7]) {
+                gwsquare(gwdata, d);
+                care = FALSE;
+            }
+            else {
+                gwsquare_carefully(gwdata, d);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(d, (bit), len, 7);
+
+            if (bitval(tmp, len - bit - 1))
+            {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[8]) {
+                    gwsafemul(gwdata, u0, d);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, u0, d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(d, (bit), len, 8);
+            }
+            bit++;
+        }
+
+        gwcopy(gwdata, check_d, u0);
+        bit = 1;
+        while (bit < len) {
+            if ((bit != lasterr_point) || !maxerr_recovery_mode[9]) {
+                gwsquare(gwdata, check_d);
+                care = FALSE;
+            }
+            else {
+                gwsquare_carefully(gwdata, check_d);
+                care = TRUE;
+            }
+            CHECK_IF_ANY_ERROR(check_d, (bit), len, 9);
+
+            if (bitval(tmp, len - bit - 1))
+            {
+                if ((bit != lasterr_point) || !maxerr_recovery_mode[9]) {
+                    gwsafemul(gwdata, u0, check_d);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, u0, check_d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(check_d, (bit), len, 9);
+            }
+            bit++;
+        }
+
+        IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+        sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
+        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL))
+        {
+            sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+            OutputError(buf);
+            return -1;
+        }
+    }
 
 	gwtogiant(gwdata, check_d, tmp);
 	if (isZero(tmp))
@@ -6210,8 +6652,9 @@ int multipointPRP(
 	gwnum	d, check_d;
 	gwnum	u0;
 	gwnum   *u;
-	giant	tmp, tmp2, gexp;
-	char	checkpoint[20], recoverypoint[20], proofpoint[64], buf[sgkbufsize + 256], fft_desc[256];
+    gwnum   *points;
+    giant	tmp, tmp2, gexp;
+	char	checkpoint[20], recoverypoint[20], productpoint[20], proofpoint[64], buf[sgkbufsize + 256], fft_desc[256];
     uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping, retval;
@@ -6241,6 +6684,7 @@ int multipointPRP(
 
 	tempFileName(checkpoint, 'z', N);
 	tempFileName(recoverypoint, 'r', N);
+    tempFileName(productpoint, 'p', N);
 
 /* Compute Gerbicz and Atnashev parameters */
 
@@ -6274,6 +6718,14 @@ int multipointPRP(
 	for (i = 0; i < (1 << (K - 1)); i++)
 		u[i] = gwalloc(gwdata);
 
+    points = NULL;
+    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+    {
+        points = (gwnum*)malloc(sizeof(gwnum)*(s + 1));
+        for (bit = 0; bit <= s; bit++)
+            points[bit] = NULL;
+    }
+
 /* Optionally resume from save file and output a message */
 /* indicating we are resuming a test */
 
@@ -6306,9 +6758,18 @@ int multipointPRP(
 		}
         total--;
     }
-	else if (!strcmp(PROOFMODE, "BuildCert"))
+    else if (!strcmp(PROOFMODE, "Compress"))
+    {
+        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+        if (stopping == FALSE)
+            goto error;
+        *res = FALSE;
+        retval = (stopping == TRUE);
+        goto cleanup;
+    }
+    else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+		stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -6734,6 +7195,11 @@ int multipointPRP(
                 if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
                     IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
             }
+            if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+            {
+                points[bit/M] = gwalloc(gwdata);
+                gwcopy(gwdata, x, points[bit/M]);
+            }
             if (!strcmp(PROOFMODE, "RedoMissing") && bit - 1 == total)
             {
                 retval = (-1);
@@ -6879,12 +7345,28 @@ int multipointPRP(
 		else {
 			sprintf(buf, "%s is base %lu-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
 		}
-	}
+
+        if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
+        {
+            stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+            if (stopping == FALSE)
+                goto error;
+            //retval = (stopping == TRUE);
+            //goto cleanup;
+        }
+    }
 
 	/* Print results.  Do not change the format of this line as Jim Fougeron of */
 	/* PFGW fame automates his QA scripts by parsing this line. */
 
 	pushg(gdata, 3);
+    if (points != NULL)
+    {
+        for (bit = 0; bit <= s; bit++)
+            if (points[bit] != NULL)
+                gwfree(gwdata, points[bit]);
+        free(points);
+    }
     for (i = 0; i < (1 << (K - 1)); i++)
 		gwfree(gwdata, u[i]);
 	free(u);
@@ -6950,6 +7432,13 @@ int multipointPRP(
 
 error:
 	pushg(gdata, 3);
+    if (points != NULL)
+    {
+        for (bit = 0; bit <= s; bit++)
+            if (points[bit] != NULL)
+                gwfree(gwdata, points[bit]);
+        free(points);
+    }
     for (i = 0; i < (1 << (K - 1)); i++)
 		gwfree(gwdata, u[i]);
 	free(u);
@@ -6998,6 +7487,13 @@ error:
 
 cleanup:
     pushg(gdata, 3);
+    if (points != NULL)
+    {
+        for (bit = 0; bit <= s; bit++)
+            if (points[bit] != NULL)
+                gwfree(gwdata, points[bit]);
+        free(points);
+    }
     for (i = 0; i < (1 << (K - 1)); i++)
         gwfree(gwdata, u[i]);
     free(u);
@@ -12139,8 +12635,9 @@ int isProthP(
 	gwnum	x;
 	gwnum	d, check_d;
 	gwnum	u0;
-	giant	tmp, tmp2, gbinput;
-	char	checkpoint[20], recoverypoint[20], proofpoint[20], buf[sgkbufsize+256],
+    gwnum   *points;
+    giant	tmp, tmp2, gbinput;
+	char	checkpoint[20], recoverypoint[20], productpoint[20], proofpoint[20], buf[sgkbufsize+256],
 		str[sgkbufsize+256], fft_desc[256], sgk1[sgkbufsize];
     uint32_t fingerprint;
 	long	write_time = DISK_WRITE_TIME * 60;
@@ -12427,6 +12924,7 @@ restart:
 
 	tempFileName(checkpoint, 'z', N);
 	tempFileName(recoverypoint, 'r', N);
+    tempFileName(productpoint, 'p', N);
 
     /* Compute Gerbicz and Atnashev parameters */
 
@@ -12454,6 +12952,14 @@ restart:
 	check_d = gwalloc(gwdata);
 
 	u0 = gwalloc(gwdata);
+
+    points = NULL;
+    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+    {
+        points = (gwnum*)malloc(sizeof(gwnum)*(s + 1));
+        for (bit = 0; bit <= s; bit++)
+            points[bit] = NULL;
+    }
 
     /* Optionally resume from save file and output a message */
     /* indicating we are resuming a test */
@@ -12486,9 +12992,18 @@ restart:
 		}
         total--;
 	}
-	else if (!strcmp(PROOFMODE, "BuildCert"))
+    else if (!strcmp(PROOFMODE, "Compress"))
+    {
+        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+        if (stopping == FALSE)
+            goto error;
+        *res = FALSE;
+        retval = (stopping == TRUE);
+        goto cleanup;
+    }
+    else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+		stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -12824,6 +13339,11 @@ restart:
                 if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
                     IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
             }
+            if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+            {
+                points[bit/M] = gwalloc(gwdata);
+                gwcopy(gwdata, x, points[bit/M]);
+            }
             if (!strcmp(PROOFMODE, "RedoMissing") && bit == total)
             {
                 pushg(gdata, 2);
@@ -12970,8 +13490,24 @@ restart:
 			sprintf (res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
 	}
 
+    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
+    {
+        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+        if (stopping == FALSE)
+            goto error;
+        //retval = (stopping == TRUE);
+        //goto cleanup;
+    }
+
 	pushg(gdata, 2);
-	gwfree(gwdata, u0);
+    if (points != NULL)
+    {
+        for (bit = 0; bit <= s; bit++)
+            if (points[bit] != NULL)
+                gwfree(gwdata, points[bit]);
+        free(points);
+    }
+    gwfree(gwdata, u0);
 	gwfree(gwdata, check_d);
 	gwfree(gwdata, d);
 	gwfree(gwdata, x);
@@ -13037,7 +13573,14 @@ restart:
 
 error:
 	pushg(gdata, 2);
-	gwfree(gwdata, u0);
+    if (points != NULL)
+    {
+        for (bit = 0; bit <= s; bit++)
+            if (points[bit] != NULL)
+                gwfree(gwdata, points[bit]);
+        free(points);
+    }
+    gwfree(gwdata, u0);
 	gwfree(gwdata, check_d);
 	gwfree(gwdata, d);
 	gwfree (gwdata, x);
@@ -13088,6 +13631,13 @@ error:
 
 cleanup:
     pushg(gdata, 2);
+    if (points != NULL)
+    {
+        for (bit = 0; bit <= s; bit++)
+            if (points[bit] != NULL)
+                gwfree(gwdata, points[bit]);
+        free(points);
+    }
     gwfree(gwdata, u0);
     gwfree(gwdata, check_d);
     gwfree(gwdata, d);
