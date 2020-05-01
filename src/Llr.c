@@ -6738,7 +6738,7 @@ int multipointPRP(
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
+			if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
                 total = bit + 1;
             if (bit%L2 == 0)
             {
@@ -6802,7 +6802,7 @@ int multipointPRP(
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -6820,19 +6820,19 @@ int multipointPRP(
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+			if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
 				break;
 			}
 		}
-		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
+		if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
 		{
 			recovery_bit = bits;
 			gwcopy(gwdata, d, u0);
 		}
 	}
-	else if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
+	else if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
 	{
 		recovery_bit = bits;
 		ops = (unsigned long)timers[4];
@@ -6862,7 +6862,7 @@ int multipointPRP(
 		bit = recovery_bit;
 		saved_recovery_bit = recovery_bit;
 		timers[4] = ops;
-		if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
+		if (!PROOFMODE[0] && !writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 			sprintf(buf, WRITEFILEERR, recoverypoint);
 			OutputBoth(buf);
 		}
@@ -7271,7 +7271,7 @@ int multipointPRP(
 			saving = FALSE;
 			if (saved_recovery_bit < recovery_bit)
 			{
-				if (!writeToFile(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
+				if (!writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 					sprintf(buf, WRITEFILEERR, recoverypoint);
 					OutputBoth(buf);
 					if (write_time > 600) write_time = 600;
@@ -7424,7 +7424,9 @@ int multipointPRP(
 
 	_unlink(checkpoint);
 	_unlink(recoverypoint);
-	lasterr_point = 0;
+    strcat(recoverypoint, ".md5");
+    _unlink(recoverypoint);
+    lasterr_point = 0;
     clearErrorPoints();
 	return (TRUE);
 
@@ -12972,7 +12974,7 @@ restart:
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
+			if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
 				total = bit + 1;
             if (bit%L2 == 0)
             {
@@ -13036,7 +13038,7 @@ restart:
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -13054,19 +13056,19 @@ restart:
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (fileExists(proofpoint) && readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+			if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
 				break;
 			}
 		}
-		if (fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
+		if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
 		{
 			recovery_bit = bits;
 			gwcopy(gwdata, d, u0);
 		}
 	}
-	else if (echkGerbicz && fileExists(recoverypoint) && readFromFile(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
+	else if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
 	{
 		recovery_bit = bits;
 	}
@@ -13096,7 +13098,7 @@ restart:
 		saved_recovery_bit = recovery_bit;
 		if (echkGerbicz)
 		{
-			if (!PROOFMODE[0] && !writeToFile(gwdata, gdata, recoverypoint, fingerprint, 1, u0, NULL)) {
+			if (!PROOFMODE[0] && !writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, 1, u0, NULL)) {
 				sprintf(buf, WRITEFILEERR, recoverypoint);
 				OutputBoth(buf);
 			}
@@ -13424,7 +13426,7 @@ restart:
 			saving = FALSE;
 			if (saved_recovery_bit < recovery_bit)
 			{
-				if (!writeToFile(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
+				if (!writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 					sprintf(buf, WRITEFILEERR, recoverypoint);
 					OutputBoth(buf);
 					if (write_time > 600) write_time = 600;
@@ -13564,7 +13566,9 @@ restart:
 	gwdone (gwdata);
 	_unlink (checkpoint);
 	_unlink (recoverypoint);
-	IniWriteString(INI_FILE, "FFT_Increment", NULL);
+    strcat(recoverypoint, ".md5");
+    _unlink(recoverypoint);
+    IniWriteString(INI_FILE, "FFT_Increment", NULL);
 	lasterr_point = 0;
 	free (gwdata);
 	return (TRUE);
