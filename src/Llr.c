@@ -909,41 +909,95 @@ int SAVE_MD5_HASH = FALSE;
 unsigned int SAVE_MD5_SIZE = 0;
 int SAVE_MD5_SUCCESS = FALSE;
 
+int CHECK_MD5_HASH = FALSE;
+
 #define io_error(fd) fd == NULL
 
 iohandle io_open(const char *filename, int flags, int access)
 {
 	iohandle handle;
-	if (!SAVE_MD5_HASH)
-	{
-		int fd = _open(filename, flags, access);
-		if (fd < 0)
-			return NULL;
-		handle = malloc(sizeof(iohandle_s));
-		handle->fd = fd;
-		handle->buffer = NULL;
-		handle->len = 0;
-		handle->pos = 0;
-		return handle;
-	}
 
-	handle = malloc(sizeof(iohandle_s));
-	handle->fd = -1;
-	handle->namelen = strlen(filename);
-	handle->pos = handle->namelen + 5;
-	handle->len = SAVE_MD5_SIZE + handle->pos;
-	handle->buffer = malloc(handle->len);
-	memcpy(handle->buffer, filename, handle->namelen);
-	strcpy(handle->buffer + handle->namelen, ".md5");
-	SAVE_MD5_SUCCESS = TRUE;
-	return handle;
+    if (SAVE_MD5_HASH)
+    {
+        handle = malloc(sizeof(iohandle_s));
+	    handle->fd = -1;
+	    handle->namelen = strlen(filename);
+	    handle->pos = handle->namelen + 5;
+	    handle->len = SAVE_MD5_SIZE + handle->pos;
+	    handle->buffer = malloc(handle->len);
+	    memcpy(handle->buffer, filename, handle->namelen);
+	    strcpy(handle->buffer + handle->namelen, ".md5");
+	    SAVE_MD5_SUCCESS = TRUE;
+	    return handle;
+    }
+    else if (CHECK_MD5_HASH)
+    {
+        int fd = _open(filename, flags, access);
+        if (fd < 0)
+            return NULL;
+        int filelen = _lseek(fd, 0L, SEEK_END);
+        handle = malloc(sizeof(iohandle_s));
+        handle->fd = -1;
+        handle->namelen = strlen(filename);
+        handle->pos = handle->namelen + 5;
+        handle->len = filelen + handle->pos;
+        handle->buffer = malloc(handle->len);
+        memcpy(handle->buffer, filename, handle->namelen);
+        strcpy(handle->buffer + handle->namelen, ".md5");
+
+        _lseek(fd, 0L, SEEK_SET);
+        filelen = _read(fd, handle->buffer + handle->pos, handle->len - handle->pos);
+        _close(fd);
+        fd = _open(handle->buffer, _O_RDONLY | _O_BINARY, 0);
+        if (fd < 0 || filelen != handle->len - handle->pos)
+        {
+            _unlink(filename);
+            free(handle->buffer);
+            free(handle);
+            return NULL;
+        }
+
+        char md5file[33];
+        char md5data[33];
+        _read(fd, md5file, 32);
+        _close(fd);
+        md5_raw_input(md5data, handle->buffer + handle->pos, handle->len - handle->pos);
+        if (strncmp(md5file, md5data, 32))
+        {
+            _unlink(filename);
+            _unlink(handle->buffer);
+            free(handle->buffer);
+            free(handle);
+            return NULL;
+        }
+
+        return handle;
+    }
+    else
+    {
+        int fd = _open(filename, flags, access);
+        if (fd < 0)
+            return NULL;
+        handle = malloc(sizeof(iohandle_s));
+        handle->fd = fd;
+        handle->buffer = NULL;
+        handle->len = 0;
+        handle->pos = 0;
+        return handle;
+    }
 }
 
 int io_read(iohandle handle, void *buffer, unsigned int count)
 {
 	if (handle->fd >= 0)
 		return _read(handle->fd, buffer, count);
-	return 0;
+    if (handle->buffer == NULL)
+        return 0;
+    if (count > handle->len - handle->pos)
+        count = handle->len - handle->pos;
+    memcpy(buffer, handle->buffer + handle->pos, count);
+    handle->pos += count;
+    return count;
 }
 
 int io_write(iohandle handle, const void *buffer, unsigned int count)
@@ -1491,6 +1545,21 @@ readerr:
 error:
 	io_reset (filename);
 	return (FALSE);
+}
+
+int readFromFileMD5(
+    gwhandle *gwdata,
+    ghandle *gdata,
+    char	*filename,
+    uint32_t fingerprint,
+    unsigned long *j,
+    gwnum	x,
+    gwnum	y)
+{
+    CHECK_MD5_HASH = TRUE;
+    int retval = readFromFile(gwdata, gdata, filename, fingerprint, j, x, y);
+    CHECK_MD5_HASH = FALSE;
+    return retval;
 }
 
 int writeToFileB (
@@ -5869,7 +5938,7 @@ gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t finge
 
     IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
     sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-    if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, r, NULL) || (bits != i*M + 1))
+    if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, r, NULL) || (bits != i*M + 1))
     {
         sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
         OutputError(buf);
@@ -6148,7 +6217,7 @@ void grnd(struct mt_state *x, int bits, giant a)
 
 int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
-	unsigned long bit, i, j, len, M, t;
+	unsigned long bit, i, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256];
 	int	saving;
     double	reallyminerr = 1.0;
