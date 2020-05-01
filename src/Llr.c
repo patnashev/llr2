@@ -6396,36 +6396,23 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
         M /= s;
         gwcopy(gwdata, u0, check_d);
 
+        care = TRUE;
         for (i = 0; i < t; i++)
         {
             gwtogiant(gwdata, check_d, tmp2);
             hash_giant(tmp2, tmp);
             make_prime(tmp);
+            len = bitlen(tmp);
 
             gwcopy(gwdata, d, u0);
             bit = 1;
-            len = bitlen(tmp);
             while (bit < len) {
-                if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
-                    gwsquare(gwdata, d);
-                    care = FALSE;
-                }
-                else {
-                    gwsquare_carefully(gwdata, d);
-                    care = TRUE;
-                }
+                gwsquare_carefully(gwdata, d);
                 CHECK_IF_ANY_ERROR(d, (bit), len, 1);
 
                 if (bitval(tmp, len - bit - 1))
                 {
-                    if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
-                        gwsafemul(gwdata, u0, d);
-                        care = FALSE;
-                    }
-                    else {
-                        gwmul_carefully(gwdata, u0, d);
-                        care = TRUE;
-                    }
+                    gwmul_carefully(gwdata, u0, d);
                     CHECK_IF_ANY_ERROR(d, (bit), len, 2);
                 }
                 bit++;
@@ -6441,51 +6428,23 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
             }
             gwcopy(gwdata, u0, x);
 
-            if ((i != lasterr_point) || !maxerr_recovery_mode[3]) {
-                gwsafemul(gwdata, u0, d);
-                care = FALSE;
-            }
-            else {
-                gwmul_carefully(gwdata, u0, d);
-                care = TRUE;
-            }
+            gwmul_carefully(gwdata, u0, d);
             CHECK_IF_ANY_ERROR(d, (i), t, 3);
 
             bit = 1;
             while (bit < len) {
-                if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
-                    gwsquare(gwdata, x);
-                    care = FALSE;
-                }
-                else {
-                    gwsquare_carefully(gwdata, x);
-                    care = TRUE;
-                }
+                gwsquare_carefully(gwdata, x);
                 CHECK_IF_ANY_ERROR(x, (bit), len, 4);
 
                 if (bitval(tmp, len - bit - 1))
                 {
-                    if ((bit != lasterr_point) || !maxerr_recovery_mode[5]) {
-                        gwsafemul(gwdata, u0, x);
-                        care = FALSE;
-                    }
-                    else {
-                        gwmul_carefully(gwdata, u0, x);
-                        care = TRUE;
-                    }
+                    gwmul_carefully(gwdata, u0, x);
                     CHECK_IF_ANY_ERROR(x, (bit), len, 5);
                 }
                 bit++;
             }
 
-            if ((i != lasterr_point) || !maxerr_recovery_mode[6]) {
-                gwsafemul(gwdata, x, check_d);
-                care = FALSE;
-            }
-            else {
-                gwmul_carefully(gwdata, x, check_d);
-                care = TRUE;
-            }
+            gwmul_carefully(gwdata, x, check_d);
             CHECK_IF_ANY_ERROR(check_d, (i), t, 6);
         }
 
@@ -6496,26 +6455,12 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
         gwcopy(gwdata, d, u0);
         bit = 1;
         while (bit < len) {
-            if ((bit != lasterr_point) || !maxerr_recovery_mode[7]) {
-                gwsquare(gwdata, d);
-                care = FALSE;
-            }
-            else {
-                gwsquare_carefully(gwdata, d);
-                care = TRUE;
-            }
+            gwsquare_carefully(gwdata, d);
             CHECK_IF_ANY_ERROR(d, (bit), len, 7);
 
             if (bitval(tmp, len - bit - 1))
             {
-                if ((bit != lasterr_point) || !maxerr_recovery_mode[8]) {
-                    gwsafemul(gwdata, u0, d);
-                    care = FALSE;
-                }
-                else {
-                    gwmul_carefully(gwdata, u0, d);
-                    care = TRUE;
-                }
+                gwmul_carefully(gwdata, u0, d);
                 CHECK_IF_ANY_ERROR(d, (bit), len, 8);
             }
             bit++;
@@ -6524,27 +6469,13 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
         gwcopy(gwdata, check_d, u0);
         bit = 1;
         while (bit < len) {
-            if ((bit != lasterr_point) || !maxerr_recovery_mode[9]) {
-                gwsquare(gwdata, check_d);
-                care = FALSE;
-            }
-            else {
-                gwsquare_carefully(gwdata, check_d);
-                care = TRUE;
-            }
+            gwsquare_carefully(gwdata, check_d);
             CHECK_IF_ANY_ERROR(check_d, (bit), len, 9);
 
             if (bitval(tmp, len - bit - 1))
             {
-                if ((bit != lasterr_point) || !maxerr_recovery_mode[9]) {
-                    gwsafemul(gwdata, u0, check_d);
-                    care = FALSE;
-                }
-                else {
-                    gwmul_carefully(gwdata, u0, check_d);
-                    care = TRUE;
-                }
-                CHECK_IF_ANY_ERROR(check_d, (bit), len, 9);
+                gwmul_carefully(gwdata, u0, check_d);
+                CHECK_IF_ANY_ERROR(check_d, (bit), len, 0);
             }
             bit++;
         }
@@ -6854,7 +6785,7 @@ int multipointPRP(
 				gwsetnormroutine(gwdata, 0, 1, 0);
 			}
 			gwsquare_carefully(gwdata, u0);
-			CHECK_IF_ANY_ERROR(u0, (ops), klen, 5);
+			CHECK_IF_ANY_ERROR(u0, (ops), klen, 0);
 			ops++;
 		}
 
@@ -7104,24 +7035,24 @@ int multipointPRP(
 			for (i = 1; i < explen; i++)
 			{
 				gwsquare_carefully(gwdata, check_d);
-				CHECK_IF_ANY_ERROR(check_d, (ops), bit, 5);
+				CHECK_IF_ANY_ERROR(check_d, (ops), bit, 1);
 				ops++;
 
 				if (bitval(gexp, explen - i - 1) != 0)
 				{
 					gwmul_carefully(gwdata, d, check_d);
-					CHECK_IF_ANY_ERROR(check_d, (ops), bit, 5);
+					CHECK_IF_ANY_ERROR(check_d, (ops), bit, 2);
 					ops++;
 				}
 			}
 			// d^(b^L)*u0
 			gwmul_carefully(gwdata, u0, check_d);
-			CHECK_IF_ANY_ERROR(check_d, (ops), bit, 5);
+			CHECK_IF_ANY_ERROR(check_d, (ops), bit, 3);
 			ops++;
 
 			// d*x
 			gwmul_carefully(gwdata, x, d);
-			CHECK_IF_ANY_ERROR(d, (ops), bit, 5);
+			CHECK_IF_ANY_ERROR(d, (ops), bit, 4);
 			ops++;
 
 			// d^(b^L)*u0 = d*x
@@ -13087,7 +13018,7 @@ restart:
 				gwsetnormroutine(gwdata, 0, 1, 0);
 			}
 			gwsquare_carefully(gwdata, u0);
-			CHECK_IF_ANY_ERROR(u0, (bit), klen, 5);
+			CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
 			bit++;
 		}
 
@@ -13256,13 +13187,13 @@ restart:
 				care = TRUE;
 				gwcopy(gwdata, d, check_d);
 				gwmul_carefully(gwdata, x, d);
-				CHECK_IF_ANY_ERROR(d, (bit), n, 5);
+				CHECK_IF_ANY_ERROR(d, (bit), n, 1);
 				for (unsigned int i = 0; i < L; i++)
 				{
 					gwsquare_carefully(gwdata, check_d);
 					//gwsquare_carefully(gwdata, check_d);
 					//gwmul_carefully(gwdata, check_d, d);
-					CHECK_IF_ANY_ERROR(check_d, (bit), n, 4); // Uh-oh
+					CHECK_IF_ANY_ERROR(check_d, (bit + i), n, 2);
 				}
 				gwmul_carefully(gwdata, u0, check_d);
 				CHECK_IF_ANY_ERROR(check_d, (bit), n, 3);
