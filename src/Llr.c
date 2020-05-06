@@ -6161,6 +6161,8 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
             IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
             sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
             _unlink(proofpoint);
+            strcat(proofpoint, ".md5");
+            _unlink(proofpoint);
         }
 
     return TRUE;
@@ -6219,7 +6221,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 {
 	unsigned long bit, i, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256];
-	int	saving;
+	int	saving, random = 0;
     double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
 	double timer1;
@@ -6235,10 +6237,14 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 	*(double *)&tmp->n[tmp->sign] = timer1;
 	tmp->sign += 2;
 	init_by_array(&rnd, tmp->n, tmp->sign);
-	sprintf(buf, "Random seed: ");
-	gtoc(tmp, buf + strlen(buf), sgkbufsize);
-	OutputStr(buf);
-	OutputStr("\n");
+    if (tmp->sign > 2)
+    {
+        random = 1;
+        sprintf(buf, "Random seed: ");
+        gtoc(tmp, buf + strlen(buf), sgkbufsize);
+        OutputStr(buf);
+        OutputStr("\n");
+    }
 
 	care = TRUE;
 	dbltogw(gwdata, (double)a, u0);
@@ -6517,36 +6523,39 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
             CHECK_IF_ANY_ERROR(check_d, (i), t, 6);
         }
 
-        grnd(&rnd, 64, tmp);
-        make_prime(tmp);
-        len = bitlen(tmp);
+        if (random)
+        {
+            grnd(&rnd, 64, tmp);
+            make_prime(tmp);
+            len = bitlen(tmp);
 
-        gwcopy(gwdata, d, u0);
-        bit = 1;
-        while (bit < len) {
-            gwsquare_carefully(gwdata, d);
-            CHECK_IF_ANY_ERROR(d, (bit), len, 7);
+            gwcopy(gwdata, d, u0);
+            bit = 1;
+            while (bit < len) {
+                gwsquare_carefully(gwdata, d);
+                CHECK_IF_ANY_ERROR(d, (bit), len, 7);
 
-            if (bitval(tmp, len - bit - 1))
-            {
-                gwmul_carefully(gwdata, u0, d);
-                CHECK_IF_ANY_ERROR(d, (bit), len, 8);
+                if (bitval(tmp, len - bit - 1))
+                {
+                    gwmul_carefully(gwdata, u0, d);
+                    CHECK_IF_ANY_ERROR(d, (bit), len, 8);
+                }
+                bit++;
             }
-            bit++;
-        }
 
-        gwcopy(gwdata, check_d, u0);
-        bit = 1;
-        while (bit < len) {
-            gwsquare_carefully(gwdata, check_d);
-            CHECK_IF_ANY_ERROR(check_d, (bit), len, 9);
+            gwcopy(gwdata, check_d, u0);
+            bit = 1;
+            while (bit < len) {
+                gwsquare_carefully(gwdata, check_d);
+                CHECK_IF_ANY_ERROR(check_d, (bit), len, 9);
 
-            if (bitval(tmp, len - bit - 1))
-            {
-                gwmul_carefully(gwdata, u0, check_d);
-                CHECK_IF_ANY_ERROR(check_d, (bit), len, 0);
+                if (bitval(tmp, len - bit - 1))
+                {
+                    gwmul_carefully(gwdata, u0, check_d);
+                    CHECK_IF_ANY_ERROR(check_d, (bit), len, 0);
+                }
+                bit++;
             }
-            bit++;
         }
 
         IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
@@ -6597,13 +6606,26 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 	write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
 	OutputBoth(buf);
 
-	if (IniGetInt(INI_FILE, "DeletePoints", 0))
-		for (i = 0; i < s; i++)
-		{
-			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-			_unlink(proofpoint);
-		}
+    if (IniGetInt(INI_FILE, "DeletePoints", 0))
+    {
+        for (i = 0; i <= s; i++)
+        {
+            IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+            _unlink(proofpoint);
+            strcat(proofpoint, ".md5");
+            _unlink(proofpoint);
+        }
+        if (IniGetInt(INI_FILE, "Pietrzak", 0))
+            for (i = 0; i < t; i++)
+            {
+                IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+                sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+                _unlink(proofpoint);
+                strcat(proofpoint, ".md5");
+                _unlink(proofpoint);
+            }
+    }
 
 	return TRUE;
 

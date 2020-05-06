@@ -472,7 +472,7 @@ DIGITSONLY:
 
 		case 'V':
 		case 'v':
-			printf ("LLR Program - Version "LLR_VERSION", using Gwnum Library Version "GWNUM_VERSION"\n");
+			printf ("LLR2 Program - Version "LLR_VERSION", using Gwnum Library Version "GWNUM_VERSION"\n");
 			return (0); 
 
 /* -W - use a different working directory */
