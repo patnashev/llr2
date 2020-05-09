@@ -884,7 +884,11 @@ void readIniFiles ()
 #define io_close net_close
 #define io_reset(a) net_reset(a,net)
 #define io_report net_report
-#elseif NOLLRIOHOOK
+int SAVE_MD5_HASH = FALSE;
+unsigned int SAVE_MD5_SIZE = 0;
+int SAVE_MD5_SUCCESS = TRUE;
+int CHECK_MD5_HASH = FALSE;
+#elif NOLLRIOHOOK
 #define iohandle int
 #define io_open _open
 #define io_error(fd) fd < 0
@@ -893,7 +897,7 @@ void readIniFiles ()
 #define io_commit _commit
 #define io_close _close
 #define io_reset _unlink
-#define io_report(a,b,c,d)
+#define io_report(a,b,c,d,e,f,g)
 #else
 typedef struct
 {
@@ -1076,7 +1080,7 @@ void io_close(iohandle handle)
 }
 
 #define io_reset _unlink
-#define io_report(a,b,c,d)
+#define io_report(a,b,c,d,e,f,g)
 #endif
 
 /*---------------------------------------------------------------------------*/
@@ -5537,7 +5541,7 @@ int commonPRP (
 		gwdata->MAXDIFF = 1.0E80;				// Diregard MAXDIFF...
 
 	gwfft_description(gwdata, fft_desc);
-	io_report(fft_desc, gwfftlen(gwdata), a, net);
+	io_report(fft_desc, gwfftlen(gwdata), a, 0, 0, 0, net);
 
 	Nlen = bitlen (N);
     fingerprint = gmodul(N, 3417905339);
@@ -6133,14 +6137,14 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
                 }
                 CHECK_IF_ANY_ERROR(d, (j), (1 << i), 6);
             }
+        }
 
-            IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
-            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-            if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, i, d, NULL)) {
-                sprintf(buf, WRITEFILEERR, proofpoint);
-                OutputError(buf);
-                return FALSE;
-            }
+        IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+        sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+        if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, i, d, NULL)) {
+            sprintf(buf, WRITEFILEERR, proofpoint);
+            OutputError(buf);
+            return FALSE;
         }
     }
     for (k = 1; k < t; k++)
@@ -6688,7 +6692,6 @@ int multipointPRP(
 		gwdata->MAXDIFF = 1.0E80;				// Diregard MAXDIFF...
 
 	gwfft_description(gwdata, fft_desc);
-	io_report(fft_desc, gwfftlen(gwdata), a, net);
 
 	Nlen = bitlen(N);
 	klen = bitlen(gk);
@@ -6724,6 +6727,8 @@ int multipointPRP(
     M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
     L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
     L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+
+    io_report(fft_desc, gwfftlen(gwdata), a, L, L2, M, net);
 
 /* Allocate memory */
 
@@ -6838,7 +6843,7 @@ int multipointPRP(
 	}
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (bit = s*M; (long)bit >= 0; bit -= L2)
+		for (bit = s*M - s*M%L2; (long)bit >= 0; bit -= L2)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
@@ -9927,7 +9932,7 @@ int Lucasequence (
 
 	gwfft_description (gwdata, fft_desc);
 	sprintf (buf, "Using %s, P = %lu\n", fft_desc, P);
-	io_report(fft_desc, gwfftlen(gwdata), P, net);
+	io_report(fft_desc, gwfftlen(gwdata), P, 0, 0, 0, net);
 
 	OutputStr (buf);
 	if (verbose || restarting) {
@@ -10986,7 +10991,7 @@ PLMCONTINUE:
 
 	gwfft_description(gwdata, fft_desc);
 	sprintf (buf, "Using %s, a = %lu\n", fft_desc,a);
-	io_report(fft_desc, gwfftlen(gwdata), a, net);
+	io_report(fft_desc, gwfftlen(gwdata), a, 0, 0, 0, net);
 
 	if (setuponly) {
 		if ((gwdata->FFTLEN != OLDFFTLEN)||debug) {
@@ -12282,7 +12287,7 @@ MERSENNE:
 	} 
 
 	gwfft_description(gwdata, fft_desc);
-	io_report(fft_desc, gwfftlen(gwdata), v1, net);
+	io_report(fft_desc, gwfftlen(gwdata), v1, 0, 0, 0, net);
 
 /* Do the Lucas Lehmer Riesel Prime test */ 
 
@@ -12932,7 +12937,6 @@ restart:
 	}
 
 	gwfft_description(gwdata, fft_desc);
-	io_report(fft_desc, gwfftlen(gwdata), a, net);
 
 	/* Init tmp = (N-1)/2 to compute a^(N-1)/2 mod N */
 
@@ -12966,6 +12970,8 @@ restart:
     M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
     L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
     L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+
+    io_report(fft_desc, gwfftlen(gwdata), a, L, L2, M, net);
 
     /* Get the current time */
 	/* Allocate memory */
@@ -13074,7 +13080,7 @@ restart:
 	}
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (bit = s*M; (long)bit >= 0; bit -= L2)
+		for (bit = s*M - s*M%L2; (long)bit >= 0; bit -= L2)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
