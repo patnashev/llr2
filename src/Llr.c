@@ -6685,6 +6685,7 @@ int multipointPRP(
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	echk, saving, stopping, retval;
 	time_t	start_time, current_time;
+    double timer1;
 	double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
 
@@ -6850,14 +6851,19 @@ int multipointPRP(
 			if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 			{
 				recovery_bit = bits;
-				break;
+                ops = (unsigned long)timers[4];
+                break;
 			}
 		}
+        timer1 = timers[1];
 		if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
 		{
 			recovery_bit = bits;
-			gwcopy(gwdata, d, u0);
+            ops = (unsigned long)timers[4];
+            gwcopy(gwdata, d, u0);
 		}
+        else
+            timers[1] = timer1;
 	}
 	else if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
 	{
@@ -6869,6 +6875,8 @@ int multipointPRP(
 
 	if (bit == 0)
 	{
+        clear_timers();	// Init. timers
+        start_timer(1);
 		care = TRUE;
 		dbltogw(gwdata, (double)a, u0);
 		gwsetmulbyconst(gwdata, a);
@@ -6884,6 +6892,8 @@ int multipointPRP(
 			CHECK_IF_ANY_ERROR(u0, (ops), klen, 0);
 			ops++;
 		}
+        end_timer(1);
+        timers[3] = timer_value(1);
 
 		recovery_bit = 1;
 		bit = recovery_bit;
@@ -6917,7 +6927,8 @@ int multipointPRP(
 	gtog(gb, gexp);
 	power(gexp, L);
 	explen = bitlen(gexp);
-	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (bits > bit) && (bits < bit + L2))
+    timer1 = timers[1];
+    if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (bits > bit) && (bits < bit + L2))
 	{
 		bit = bits;
 		ops = (unsigned long)timers[4];
@@ -6926,7 +6937,8 @@ int multipointPRP(
 	{
 		if (fileExists(checkpoint))
 			io_reset(checkpoint);
-		gwcopy(gwdata, u0, x);
+        timers[1] = timer1;
+        gwcopy(gwdata, u0, x);
 		gwcopy(gwdata, u0, d);
 	}
 
@@ -6948,7 +6960,6 @@ int multipointPRP(
 	/* Otherwise, output a message indicating we are starting test */
 
 	else {
-		clear_timers();	// Init. timers
 		if (showdigits)
 			sprintf(buf, "Starting probable prime test of %s (%lu decimal digits)\n", str, nbdg);
 		else
@@ -7209,6 +7220,9 @@ int multipointPRP(
 
         if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
         {
+            end_timer(1);
+            timers[3] = timer_value(1);
+            timers[4] = ops;
             IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
             sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
             if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, bit, x, NULL)) {
@@ -7232,6 +7246,8 @@ int multipointPRP(
                 retval = (-1);
                 goto cleanup;
             }
+            start_timer(1);
+            time(&start_time);
         }
 
 		/* That iteration succeeded, bump counters */
@@ -12672,7 +12688,8 @@ int isProthP(
 	long	write_time = DISK_WRITE_TIME * 60;
 	int	resaprcl, echk, saving, stopping, echkGerbicz = +1;
 	time_t	start_time, current_time;
-	double	reallyminerr = 1.0;
+    double timer1;
+    double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
 	double dk;
 
@@ -13090,12 +13107,15 @@ restart:
 				break;
 			}
 		}
-		if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
+        timer1 = timers[1];
+        if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
 		{
 			recovery_bit = bits;
 			gwcopy(gwdata, d, u0);
 		}
-	}
+        else
+            timers[1] = timer1;
+    }
 	else if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
 	{
 		recovery_bit = bits;
@@ -13105,7 +13125,9 @@ restart:
 
 	if (bit == 0)
 	{
-		care = TRUE;
+        clear_timers();	// Init. timers
+        start_timer(1);
+        care = TRUE;
 		dbltogw(gwdata, (double)a, u0);
 		gwsetmulbyconst(gwdata, a);
 		bit = 1;
@@ -13120,6 +13142,8 @@ restart:
 			CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
 			bit++;
 		}
+        end_timer(1);
+        timers[3] = timer_value(1);
 
 		recovery_bit = 1;
 		bit = recovery_bit;
@@ -13156,7 +13180,8 @@ restart:
 		L /= 2;
 		L2 = L*L;
 	}
-	if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (!echkGerbicz || ((bits > bit) && (bits < bit + L2))))
+    timer1 = timers[1];
+    if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (!echkGerbicz || ((bits > bit) && (bits < bit + L2))))
 	{
 		bit = bits;
 		if (!echkGerbicz)
@@ -13166,7 +13191,8 @@ restart:
 	{
 		if (fileExists(checkpoint))
 			io_reset(checkpoint);
-		gwcopy(gwdata, u0, x);
+        timers[1] = timer1;
+        gwcopy(gwdata, u0, x);
 		if (echkGerbicz)
 			gwcopy(gwdata, u0, d);
 	}
@@ -13187,7 +13213,6 @@ restart:
 /* Otherwise, output a message indicating we are starting test */
 
 	else {
-		clear_timers ();	// Make all timers clean...
 		if (setuponly) {
 			if (gwdata->FFTLEN != OLDFFTLEN) {
 				OutputBoth (str); 
@@ -13356,6 +13381,8 @@ restart:
 
         if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
         {
+            end_timer(1);
+            timers[3] = timer_value(1);
             IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
             sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
             if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, bit + 1, x, NULL)) {
@@ -13383,6 +13410,8 @@ restart:
                 gwfree(gwdata, x);
                 goto restart;
             }
+            start_timer(1);
+            time(&start_time);
         }
 
 		//if (bit == n-1)
