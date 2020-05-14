@@ -5874,7 +5874,7 @@ int commonPRP (
 /* Output the final timings */
 
 	end_timer (1);
-	write_timer (buf+strlen(buf), 1, TIMER_CLR | TIMER_NL); 
+	write_timer (buf+strlen(buf), 1, TIMER_NL);
 	if ((*res && IniGetInt (INI_FILE, "OutputPrimes", 0)) ||
 	    (!*res && IniGetInt (INI_FILE, "OutputComposites", 0)))
 		OutputStr (buf);
@@ -6778,12 +6778,10 @@ int multipointPRP(
 		}
 		if (total == 0)
 		{
-			_unlink(checkpoint);
-			_unlink(recoverypoint);
-			*res = FALSE;
-			retval = TRUE;
+            strcpy(PROOFMODE, "SavePoints");
+            retval = (-1);
             goto cleanup;
-		}
+        }
         total--;
     }
     else if (!strcmp(PROOFMODE, "Compress"))
@@ -7456,7 +7454,7 @@ int multipointPRP(
 	/* Output the final timings */
 
 	end_timer(1);
-	write_timer(buf + strlen(buf), 1, TIMER_CLR | TIMER_NL);
+	write_timer(buf + strlen(buf), 1, TIMER_NL);
 	if ((*res && IniGetInt(INI_FILE, "OutputPrimes", 0)) ||
 		(!*res && IniGetInt(INI_FILE, "OutputComposites", 0)))
 		OutputStr(buf);
@@ -9277,6 +9275,7 @@ int IsPRP (							// General PRP test
 	}
 
     if ((nbdg = gnbdg(N, 10)) < 2000) {		// Attempt an APRCL test...
+        clear_timer(1);
         start_timer(1);
         if (nbdg > maxaprcl)
             resaprcl = gaprcltest(N, TRUE, APRTCLE_VERBOSE0);	// Make only a Strong BPSW PRP test
@@ -9440,6 +9439,7 @@ int IsCCP (	// General test for the next prime in a Cunningham chain
 	iaddg (incr, N);
 
     if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+        clear_timer(1);
         start_timer(1);
         resaprcl = gaprcltest(N, FALSE, APRTCLE_VERBOSE0);	// Primality test silently done
         end_timer(1);
@@ -10632,6 +10632,7 @@ int plusminustest (
 	globalk = dk;
 
     if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+        clear_timer(1);
         start_timer(1);
         resaprcl = gaprcltest(N, FALSE, APRTCLE_VERBOSE0);	// Primality test silently done
         end_timer(1);
@@ -11467,7 +11468,7 @@ DoLucas:
 
 	end_timer (1);
 //	sprintf (buf+strlen(buf)-1, "  Time: ");
-	write_timer (buf+strlen(buf), 1, TIMER_CLR | TIMER_NL); 
+	write_timer (buf+strlen(buf), 1, TIMER_NL);
 	if (!frestart) {
 		OutputBoth (buf);
 		IniWriteString (INI_FILE, "NRestarts", NULL);
@@ -11699,6 +11700,7 @@ int isLLRP (
 	globalk = dk;
 
     if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+        clear_timer(1);
         start_timer(1);
         resaprcl = gaprcltest(N, FALSE, APRTCLE_VERBOSE0);	// Primality test silently done
         end_timer(1);
@@ -12500,7 +12502,7 @@ MERSENNE:
 #endif
 
 	end_timer (1); 
-	write_timer (buf+strlen(buf), 1, TIMER_CLR | TIMER_NL); 
+	write_timer (buf+strlen(buf), 1, TIMER_NL);
 	OutputBoth (buf); 
 
 	pushg (gdata, 1); 
@@ -12781,6 +12783,7 @@ int isProthP(
     fingerprint = gmodul(N, 3417905339);
 
     if ((nbdg = gnbdg(N, 10)) < 100) {			// Attempt an APRCL test for this small number...
+        clear_timer(1);
         start_timer(1);
         resaprcl = gaprcltest(N, FALSE, APRTCLE_VERBOSE0);	// Primality test silently done
         end_timer(1);
@@ -13031,12 +13034,14 @@ restart:
 		}
 		if (total == 0)
 		{
-			_unlink(checkpoint);
-			_unlink(recoverypoint);
-			*res = FALSE;
-            retval = TRUE;
-			goto cleanup;
-		}
+            strcpy(PROOFMODE, "SavePoints");
+            pushg(gdata, 2);
+            gwfree(gwdata, u0);
+            gwfree(gwdata, check_d);
+            gwfree(gwdata, d);
+            gwfree(gwdata, x);
+            goto restart;
+        }
         total--;
 	}
     else if (!strcmp(PROOFMODE, "Compress"))
@@ -13615,7 +13620,7 @@ restart:
 /* Output the final timings */
 
 	end_timer (1);
-	write_timer (buf+strlen(buf), 1, TIMER_CLR | TIMER_NL); 
+	write_timer (buf+strlen(buf), 1, TIMER_NL);
 	OutputBoth(buf);
 
 /* Cleanup and return */
@@ -13884,7 +13889,8 @@ int isGMNP (
 	if (!facto && (nbdg1 < 2000) && (nbdg2 < 2000)) {
 		a = 0;						// N and NP are small numbers, so we may make APRCL tests...
 		res1 = res2 = 0;			// Clear the results...		
-		start_timer(1);				// Beginning the test of the GMN...
+        clear_timer(1);
+        start_timer(1);				// Beginning the test of the GMN...
         if (nbdg1 < 100) {			// Attempt an APRCL test only on M.N. less than 100 digits large...
             resaprcl1 = gaprcltest(N, FALSE, APRTCLE_VERBOSE0);// Primality test silently done
             res1 = ((resaprcl1 == APRTCLE_PRIME)||(resaprcl1 == TRIAL_PRIME));
@@ -15041,6 +15047,7 @@ int isWSPRP (
 	uldivg (3, NP);					// NP  = (2^n + 1)/3
 
     if (!facto && ((nbdg = gnbdg(NP, 10)) < 2000)) {	// Attempt an APRCL test...
+        clear_timer(1);
         start_timer(1);
         if (nbdg > maxaprcl)
             resaprcl = gaprcltest(NP, TRUE, APRTCLE_VERBOSE0);			// Make only a Strong BPSW PRP test
