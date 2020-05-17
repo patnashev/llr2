@@ -6828,7 +6828,7 @@ int multipointPRP(
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-		if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
@@ -13088,7 +13088,7 @@ restart:
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-		if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+		if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 		{
 			sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
 			OutputError(buf);
