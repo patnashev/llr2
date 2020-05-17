@@ -6805,6 +6805,8 @@ int multipointPRP(
             goto cleanup;
         }
         strcpy(PROOFMODE, "VerifyRes");
+        maxerr_recovery_mode[6] = 1;
+        ERRCHK = 1;
     }
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
@@ -6839,7 +6841,9 @@ int multipointPRP(
         }
 		recovery_bit = bits;
 		clear_timer(1);
-	}
+        maxerr_recovery_mode[6] = 1;
+        ERRCHK = 1;
+    }
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
 		for (bit = s*M - s*M%L2; (long)bit >= 0; bit -= L2)
@@ -13065,7 +13069,9 @@ restart:
             goto cleanup;
 		}
         strcpy(PROOFMODE, "VerifyRes");
-	}
+        maxerr_recovery_mode[6] = 1;
+        ERRCHK = 1;
+    }
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
@@ -13099,7 +13105,9 @@ restart:
         }
 		recovery_bit = bits;
 		clear_timer(1);
-	}
+        maxerr_recovery_mode[6] = 1;
+        ERRCHK = 1;
+    }
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
 		for (bit = s*M - s*M%L2; (long)bit >= 0; bit -= L2)
