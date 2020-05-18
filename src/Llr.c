@@ -6795,7 +6795,12 @@ int multipointPRP(
     }
     else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        sprintf(buf, "Building certificate...\nUsing %s\n", fft_desc);
+        OutputStr(buf);
+        if (verbose || restarting) {
+            writeError(buf);
+        }
+        stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -13059,7 +13064,12 @@ restart:
     }
     else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        sprintf(buf, "Building certificate...\nUsing %s\n", fft_desc);
+        OutputStr(buf);
+        if (verbose || restarting) {
+            writeError(buf);
+        }
+        stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
