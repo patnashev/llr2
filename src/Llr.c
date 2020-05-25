@@ -6758,7 +6758,8 @@ int multipointPRP(
 /* indicating we are resuming a test */
 
 	recovery_bit = 0;
-	ops = 0;
+    saved_recovery_bit = total;
+    ops = 0;
 	if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
         total = 0;
@@ -6783,6 +6784,7 @@ int multipointPRP(
             goto cleanup;
         }
         total--;
+        saved_recovery_bit = total;
     }
     else if (!strcmp(PROOFMODE, "Compress"))
     {
@@ -6863,10 +6865,11 @@ int multipointPRP(
                 break;
 			}
 		}
-	}
+        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit - 1 + M;
+    }
 
     timer1 = timers[1];
-    if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= total))
+    if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= saved_recovery_bit))
     {
         recovery_bit = bits;
         ops = (unsigned long)timers[4];
@@ -13021,6 +13024,7 @@ restart:
     /* indicating we are resuming a test */
 
     recovery_bit = 0;
+    saved_recovery_bit = total;
 	if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
         total = 0;
@@ -13049,7 +13053,8 @@ restart:
             goto restart;
         }
         total--;
-	}
+        saved_recovery_bit = total;
+    }
     else if (!strcmp(PROOFMODE, "Compress"))
     {
         stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
@@ -13128,10 +13133,11 @@ restart:
 				break;
 			}
 		}
+        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit - 1 + M;
     }
 
     timer1 = timers[1];
-    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= total))
+    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= saved_recovery_bit))
     {
         recovery_bit = bits;
         gwcopy(gwdata, d, u0);
