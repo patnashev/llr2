@@ -6865,7 +6865,7 @@ int multipointPRP(
                 break;
 			}
 		}
-        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit - 1 + M;
+        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit > s*M ? total : recovery_bit - 1 + M;
     }
 
     timer1 = timers[1];
@@ -13133,7 +13133,7 @@ restart:
 				break;
 			}
 		}
-        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit - 1 + M;
+        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit > s*M ? total : recovery_bit - 1 + M;
     }
 
     timer1 = timers[1];
