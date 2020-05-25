@@ -6795,7 +6795,12 @@ int multipointPRP(
     }
     else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        sprintf(buf, "Building certificate...\nUsing %s\n", fft_desc);
+        OutputStr(buf);
+        if (verbose || restarting) {
+            writeError(buf);
+        }
+        stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -6825,7 +6830,8 @@ int multipointPRP(
 		total = bits;
 		clear_timer(1);
 		checkpoint[0] = 'v';
-	}
+        recoverypoint[0] = 'w';
+    }
 	else if (!strcmp(PROOFMODE, "VerifyRes"))
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
@@ -6840,7 +6846,7 @@ int multipointPRP(
             goto cleanup;
         }
 		recovery_bit = bits;
-		clear_timer(1);
+        clear_timer(1);
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
     }
@@ -6857,21 +6863,17 @@ int multipointPRP(
                 break;
 			}
 		}
-        timer1 = timers[1];
-		if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
-		{
-			recovery_bit = bits;
-            ops = (unsigned long)timers[4];
-            gwcopy(gwdata, d, u0);
-		}
-        else
-            timers[1] = timer1;
 	}
-	else if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
-	{
-		recovery_bit = bits;
-		ops = (unsigned long)timers[4];
-	}
+
+    timer1 = timers[1];
+    if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= total))
+    {
+        recovery_bit = bits;
+        ops = (unsigned long)timers[4];
+        gwcopy(gwdata, d, u0);
+    }
+    else
+        timers[1] = timer1;
 	saved_recovery_bit = recovery_bit;
 	bit = recovery_bit;
 
@@ -13059,7 +13061,12 @@ restart:
     }
     else if (!strcmp(PROOFMODE, "BuildCert"))
 	{
-		stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        sprintf(buf, "Building certificate...\nUsing %s\n", fft_desc);
+        OutputStr(buf);
+        if (verbose || restarting) {
+            writeError(buf);
+        }
+        stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -13089,7 +13096,8 @@ restart:
 		total = bits;
 		clear_timer(1);
 		checkpoint[0] = 'v';
-	}
+        recoverypoint[0] = 'w';
+    }
 	else if (!strcmp(PROOFMODE, "VerifyRes"))
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
@@ -13104,7 +13112,7 @@ restart:
             goto cleanup;
         }
 		recovery_bit = bits;
-		clear_timer(1);
+        clear_timer(1);
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
     }
@@ -13120,20 +13128,17 @@ restart:
 				break;
 			}
 		}
-        timer1 = timers[1];
-        if (fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits))
-		{
-			recovery_bit = bits;
-			gwcopy(gwdata, d, u0);
-		}
-        else
-            timers[1] = timer1;
     }
-	else if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, u0, NULL))
-	{
-		recovery_bit = bits;
-	}
-	saved_recovery_bit = recovery_bit;
+
+    timer1 = timers[1];
+    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= total))
+    {
+        recovery_bit = bits;
+        gwcopy(gwdata, d, u0);
+    }
+    else
+        timers[1] = timer1;
+    saved_recovery_bit = recovery_bit;
 	bit = recovery_bit;
 
 	if (bit == 0)
@@ -13259,7 +13264,6 @@ restart:
 	if (!setuponly || (gwdata->FFTLEN != OLDFFTLEN)) {
 		OutputStr (buf);
 	}
-	sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
 	if (setuponly) {
 		stopping = stopCheck (); 
 		if (gwdata->FFTLEN != OLDFFTLEN) {
