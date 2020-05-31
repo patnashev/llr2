@@ -7191,7 +7191,12 @@ int multipointPRP(
                     retval = FALSE;
                     goto cleanup;
                 }
-				restarting = TRUE;
+                else if (error_count == MAX_ERROR_COUNT/2)
+                {
+                    OutputError(ERRMSG9);
+                    will_try_larger_fft = TRUE;
+                }
+                restarting = TRUE;
 				goto error;
 			}
 			else
@@ -13370,7 +13375,12 @@ restart:
                         retval = FALSE;
                         goto cleanup;
                     }
-					restarting = TRUE;
+                    else if (error_count == MAX_ERROR_COUNT/2)
+                    {
+                        OutputError(ERRMSG9);
+                        will_try_larger_fft = TRUE;
+                    }
+                    restarting = TRUE;
 					goto error;
 				}
 				else
