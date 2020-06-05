@@ -210,6 +210,7 @@ char wfsstring[] = "$a$b$c";
 #endif
 
 #define IBSIZE 300
+#define MAX_OPTIONS 16
 
 char	greatbuf[10001] = {0};
 char	INI_FILE[80] = {0};
@@ -279,7 +280,7 @@ unsigned long facn = 0, facnp = 0;
 int resn = 0, resnp = 0;
 char facnstr[80], facnpstr[80];
 char m_pgen_input[IBSIZE], m_pgen_output[IBSIZE], oldm_pgen_input[IBSIZE];
-char keywords[10][IBSIZE], values[10][IBSIZE];
+char keywords[MAX_OPTIONS][IBSIZE], values[MAX_OPTIONS][IBSIZE];
 char multiplier[IBSIZE], base[IBSIZE], exponent[IBSIZE], exponent2[IBSIZE], addin[IBSIZE];
 char inifilebuf[IBSIZE];
 char sgd[sgkbufsize];

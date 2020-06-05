@@ -285,7 +285,7 @@ int main (
 			p2 = strchr (p, '=');
 			if (p2 == NULL)					// Ignore an invalid option...
 				break;
-			if (opcnt >= 10)				// Maximum 10 options...
+			if (opcnt >= MAX_OPTIONS)				// Maximum MAX_OPTIONS options...
 				break;
 			strcpy (values[opcnt], p2+1);
 			p2 = keywords[opcnt];
@@ -299,7 +299,7 @@ int main (
 
 		case 'T':
 		case 't':
-			if (opcnt >= 10)				// Maximum 10 options...
+			if (opcnt >= MAX_OPTIONS)				// Maximum MAX_OPTIONS options...
 				break;
 			strcpy (keywords[opcnt], "ThreadsPerTest");
 			while (isspace (*p))
@@ -315,7 +315,7 @@ int main (
 
 		case 'L':
 		case 'l':
-            if (opcnt >= 10)				// Maximum 10 options...
+            if (opcnt >= MAX_OPTIONS)				// Maximum MAX_OPTIONS options...
                 break;
             strcpy(keywords[opcnt], "LargePages");
             while (isspace(*p))
@@ -332,7 +332,7 @@ int main (
 
 		case 'I':
 		case 'i':
-            if (opcnt >= 10)				// Maximum 10 options...
+            if (opcnt >= MAX_OPTIONS)				// Maximum MAX_OPTIONS options...
                 break;
             strcpy(keywords[opcnt], "Identifier");
             while (isspace(*p))
