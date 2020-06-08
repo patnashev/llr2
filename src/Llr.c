@@ -6299,6 +6299,7 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 
     care = TRUE;
     gwsetnormroutine(gwdata, 0, 1, 0);
+    gwcopy(gwdata, d, u0);
 
     if (!IniGetInt(INI_FILE, "Pietrzak", 0))
     {
