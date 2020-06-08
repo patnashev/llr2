@@ -6222,7 +6222,7 @@ void grnd(struct mt_state *x, int bits, giant a)
 		a->sign--;
 }
 
-int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
+int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
 	unsigned long bit, i, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256];
@@ -6251,7 +6251,7 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
         OutputStr("\n");
     }
 
-	care = TRUE;
+	/*care = TRUE;
 	dbltogw(gwdata, (double)a, u0);
 	gwsetmulbyconst(gwdata, a);
 	bit = 1;
@@ -6266,7 +6266,12 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 		CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
 		bit++;
 	}
-	gwtogiant(gwdata, u0, tmp);
+	gwtogiant(gwdata, u0, tmp);*/
+    itog(a, tmp);
+    if (klen < 20)
+        setmulmode(GRAMMAR_MUL);
+    powermodg(tmp, gk, N);
+    setmulmode(AUTO_MUL);
 
 	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 	sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
@@ -6285,14 +6290,15 @@ int buildCertificate(unsigned long n, unsigned long s, long a, char *recoverypoi
 		return -1;
 	}
 
-	if (s == 0)
+	if (IniGetInt(INI_FILE, "Check0", 0))
 	{
 		sprintf(buf, "a^k is correct.\n");
 		OutputBoth(buf);
 		return TRUE;
 	}
 
-	gwsetnormroutine(gwdata, 0, 1, 0);
+    care = TRUE;
+    gwsetnormroutine(gwdata, 0, 1, 0);
 
     if (!IniGetInt(INI_FILE, "Pietrzak", 0))
     {
@@ -6668,7 +6674,7 @@ int multipointPRP(
 	signed long c,			/* c in k*b^n+c */
 	gwhandle *gwdata,
 	ghandle *gdata,
-	unsigned long a,
+	int a,
 	int* res,
 	char* str)
 {
@@ -12690,7 +12696,7 @@ int isProthP(
 	unsigned long iters, gksize;
 	unsigned long p;
 	unsigned long bit, bits, total;
-	long	a, retval;
+	int	a, retval;
 	unsigned long	L, L2, s, M, recovery_bit, saved_recovery_bit;
 	gwhandle *gwdata;
 	ghandle *gdata;
