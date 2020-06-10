@@ -6290,12 +6290,20 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 		return -1;
 	}
 
+    sprintf(buf, "a^k is correct.  Time : ");
+    start_timer(1);
+    timers[1] = timer1;
+    end_timer(1);
+    write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
+    OutputStr(buf);
+
 	if (IniGetInt(INI_FILE, "Check0", 0))
 	{
-		sprintf(buf, "a^k is correct.\n");
-		OutputBoth(buf);
 		return TRUE;
 	}
+
+    start_timer(1);
+    timer1 = timers[1];
 
     care = TRUE;
     gwsetnormroutine(gwdata, 0, 1, 0);
@@ -6465,9 +6473,25 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             return -1;
         }
 
+        gwnum* products = (gwnum*)malloc(sizeof(gwnum)*(t + 1));
+        for (i = 0; i <= t; i++)
+            products[i] = gwalloc(gwdata);
+
+        for (i = 0; i < t; i++)
+        {
+            IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+            if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, products[i], NULL) || (i != *recovery_bit))
+            {
+                sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+                OutputError(buf);
+                return -1;
+            }
+        }
+
         IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
         sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL))
+        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, products[t], NULL))
         {
             sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
             OutputError(buf);
@@ -6481,7 +6505,16 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             return -1;
         }
         M /= s;
-        gwcopy(gwdata, u0, check_d);
+        gwcopy(gwdata, products[t], check_d);
+
+        sprintf(buf, "Points loaded.  Time : ");
+        start_timer(1);
+        timers[1] = timer1;
+        end_timer(1);
+        write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
+        OutputStr(buf);
+        start_timer(1);
+        timer1 = timers[1];
 
         care = TRUE;
         for (i = 0; i < t; i++)
@@ -6505,14 +6538,15 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
                 bit++;
             }
 
-            IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+            /*IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
             sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
             if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i != *recovery_bit))
             {
                 sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
                 OutputError(buf);
                 return -1;
-            }
+            }*/
+            gwcopy(gwdata, products[i], u0);
             gwcopy(gwdata, u0, x);
 
             gwmul_carefully(gwdata, u0, d);
@@ -6570,14 +6604,19 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             }
         }
 
-        IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+        /*IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
         sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
         if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL))
         {
             sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
             OutputError(buf);
             return -1;
-        }
+        }*/
+        gwcopy(gwdata, products[t], u0);
+
+        for (i = 0; i <= t; i++)
+            gwfree(gwdata, products[i]);
+        free(products);
     }
 
 	gwtogiant(gwdata, check_d, tmp);
@@ -6940,7 +6979,9 @@ int multipointPRP(
 		L2 = L*L;
 	}
 	gtog(gb, gexp);
+    setmulmode(GRAMMAR_MUL);
 	power(gexp, L);
+    setmulmode(AUTO_MUL);
 	explen = bitlen(gexp);
     timer1 = timers[1];
     if (fileExists(checkpoint) && readFromFile(gwdata, gdata, checkpoint, fingerprint, &bits, x, d) && (bits > bit) && (bits < bit + L2))
@@ -7225,8 +7266,10 @@ int multipointPRP(
 				if (gexp->sign == 0)
 				{
 					gtog(gb, gexp);
-					power(gexp, L);
-					explen = bitlen(gexp);
+                    setmulmode(GRAMMAR_MUL);
+                    power(gexp, L);
+                    setmulmode(AUTO_MUL);
+                    explen = bitlen(gexp);
 				}
 			}
 		}
