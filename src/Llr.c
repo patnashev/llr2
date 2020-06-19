@@ -5983,10 +5983,11 @@ void make_prime(giant g)
 int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp)
 {
     unsigned long t, i, j, k;
-    unsigned long bit, len;
+    unsigned long bit, len, ops;
     char	proofpoint[64], buf[sgkbufsize+256];
     int	saving;
     gwnum r;
+    gwnum tree[32];
     giant h[32];
     double	reallyminerr = 1.0;
     double	reallymaxerr = 0.0;
@@ -6031,7 +6032,11 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
     gwsetnormroutine(gwdata, 0, 1, 0);
 
     for (k = 1; k < t; k++)
+        tree[k] = NULL;
+    for (k = 1; k < t; k++)
         h[k] = NULL;
+
+    ops = 0;
     for (i = 1; i < t; i++)
     {
         h[i] = allocgiant(4);
@@ -6046,7 +6051,7 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
             bit = 1;
             len = bitlen(tmp);
             while (bit < len) {
-                if ((bit != lasterr_point) || !maxerr_recovery_mode[1]) {
+                if ((ops != lasterr_point) || !maxerr_recovery_mode[1]) {
                     gwsquare(gwdata, d);
                     care = FALSE;
                 }
@@ -6054,11 +6059,12 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
                     gwsquare_carefully(gwdata, d);
                     care = TRUE;
                 }
-                CHECK_IF_ANY_ERROR(d, (bit), len, 1);
+                CHECK_IF_ANY_ERROR(d, (ops), i, 1);
+                ops++;
 
                 if (bitval(tmp, len - bit - 1))
                 {
-                    if ((bit != lasterr_point) || !maxerr_recovery_mode[2]) {
+                    if ((ops != lasterr_point) || !maxerr_recovery_mode[2]) {
                         gwsafemul(gwdata, check_d, d);
                         care = FALSE;
                     }
@@ -6066,12 +6072,13 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
                         gwmul_carefully(gwdata, check_d, d);
                         care = TRUE;
                     }
-                    CHECK_IF_ANY_ERROR(d, (bit), len, 2);
+                    CHECK_IF_ANY_ERROR(d, (ops), i, 2);
+                    ops++;
                 }
                 bit++;
             }
 
-            if ((i != lasterr_point) || !maxerr_recovery_mode[3]) {
+            if ((ops != lasterr_point) || !maxerr_recovery_mode[3]) {
                 gwsafemul(gwdata, d, x);
                 care = FALSE;
             }
@@ -6079,65 +6086,75 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
                 gwmul_carefully(gwdata, d, x);
                 care = TRUE;
             }
-            CHECK_IF_ANY_ERROR(x, (i), t, 3);
+            CHECK_IF_ANY_ERROR(x, (ops), i, 3);
+            ops++;
         }
 
+        tree[i] = gwalloc(gwdata);
         for (j = 0; j < (1UL << i); j++)
         {
-            ultog(1, tmp);
-            for (k = 0; k < i; k++)
-                if ((j & (1 << k)) == 0)
-                    mulg(h[i - k], tmp);
             if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, (1 + j*2) << (t - i - 1), M, points, u0)) == NULL)
             {
+                for (k = 1; k <= i; k++)
+                    gwfree(gwdata, tree[k]);
                 for (k = 1; k <= i; k++)
                     free(h[k]);
                 return -1;
             }
-            gwcopy(gwdata, r, check_d);
+            gwcopy(gwdata, r, d);
 
-            bit = 1;
-            len = bitlen(tmp);
-            while (bit < len) {
-                if ((bit != lasterr_point) || !maxerr_recovery_mode[4]) {
-                    gwsquare(gwdata, check_d);
-                    care = FALSE;
-                }
-                else {
-                    gwsquare_carefully(gwdata, check_d);
-                    care = TRUE;
-                }
-                CHECK_IF_ANY_ERROR(check_d, (bit), len, 4);
-
-                if (bitval(tmp, len - bit - 1))
+            for (k = 0; k < i; k++)
+                if ((j & (1 << k)) == 0)
                 {
-                    if ((bit != lasterr_point) || !maxerr_recovery_mode[5]) {
-                        gwsafemul(gwdata, r, check_d);
+                    gwcopy(gwdata, d, tree[i - k]);
+                    break;
+                }
+                else
+                {
+                    r = tree[i - k];
+                    gwcopy(gwdata, r, check_d);
+                    gtog(h[i - k], tmp);
+                    bit = 1;
+                    len = bitlen(tmp);
+                    while (bit < len) {
+                        if ((ops != lasterr_point) || !maxerr_recovery_mode[4]) {
+                            gwsquare(gwdata, check_d);
+                            care = FALSE;
+                        }
+                        else {
+                            gwsquare_carefully(gwdata, check_d);
+                            care = TRUE;
+                        }
+                        CHECK_IF_ANY_ERROR(check_d, (ops), (i*s*t + j*t + k), 4);
+                        ops++;
+
+                        if (bitval(tmp, len - bit - 1))
+                        {
+                            if ((ops != lasterr_point) || !maxerr_recovery_mode[5]) {
+                                gwsafemul(gwdata, r, check_d);
+                                care = FALSE;
+                            }
+                            else {
+                                gwmul_carefully(gwdata, r, check_d);
+                                care = TRUE;
+                            }
+                            CHECK_IF_ANY_ERROR(check_d, (ops), (i*s*t + j*t + k), 5);
+                            ops++;
+                        }
+                        bit++;
+                    }
+
+                    if ((ops != lasterr_point) || !maxerr_recovery_mode[6]) {
+                        gwsafemul(gwdata, check_d, d);
                         care = FALSE;
                     }
                     else {
-                        gwmul_carefully(gwdata, r, check_d);
+                        gwmul_carefully(gwdata, check_d, d);
                         care = TRUE;
                     }
-                    CHECK_IF_ANY_ERROR(check_d, (bit), len, 5);
+                    CHECK_IF_ANY_ERROR(d, (ops), (i*s*t + j*t + k), 6);
+                    ops++;
                 }
-                bit++;
-            }
-
-            if (j == 0)
-                gwcopy(gwdata, check_d, d);
-            else
-            {
-                if ((i != lasterr_point) || !maxerr_recovery_mode[6]) {
-                    gwsafemul(gwdata, check_d, d);
-                    care = FALSE;
-                }
-                else {
-                    gwmul_carefully(gwdata, check_d, d);
-                    care = TRUE;
-                }
-                CHECK_IF_ANY_ERROR(d, (j), (1 << i), 6);
-            }
         }
 
         IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
@@ -6148,6 +6165,8 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
             return FALSE;
         }
     }
+    for (k = 1; k < t; k++)
+        gwfree(gwdata, tree[k]);
     for (k = 1; k < t; k++)
         free(h[k]);
 
@@ -6173,6 +6192,9 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
     return TRUE;
 
 error:
+    for (k = 1; k < t; k++)
+        if (tree[k] != NULL)
+            gwfree(gwdata, tree[k]);
     for (k = 1; k < t; k++)
         if (h[k] != NULL)
             free(h[k]);
