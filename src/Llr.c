@@ -5980,6 +5980,39 @@ void make_prime(giant g)
     }
 }
 
+void make_primer(giant g)
+{
+    int j, k;
+    g->n[0] |= 1;
+    if (g->sign < 2)
+    {
+        g->n[1] = 1;
+        g->sign = 2;
+    }
+    while (1)
+    {
+        for (j = 0; j < 168 && gmodul(g, smallprime[j]) != 0; j++);
+        if (j < 168)
+        {
+            uladdg(2, g);
+            continue;
+        }
+        for (k = 1001; k < 1000001; k += 2)
+        {
+            for (j = 0; j < 168 && k%smallprime[j] != 0; j++);
+            if (j < 168)
+                continue;
+            if (gmodul(g, k) == 0)
+            {
+                uladdg(2, g);
+                break;
+            }
+        }
+        if (k == 1000001)
+            break;
+    }
+}
+
 int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp)
 {
     unsigned long t, i, j, k;
@@ -6593,8 +6626,17 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 
         if (random)
         {
-            grnd(&rnd, 64, tmp);
-            make_prime(tmp);
+            tmp->sign = 0;
+            while (tmp->sign == 0)
+            {
+                grnd(&rnd, 64, tmp);
+                make_primer(tmp);
+                /*gtog(N, tmp2);
+                ulsubg(1, tmp2);
+                gcdg(tmp, tmp2);
+                if (!isone(tmp2))
+                    tmp->sign = 0;*/
+            }
             len = bitlen(tmp);
 
             gwcopy(gwdata, d, u0);
@@ -6649,13 +6691,13 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 		return -1;
 	}
 
-	gcdg(N, tmp);
+	/*gcdg(N, tmp);
 	if (!isone(tmp))
 	{
 		sprintf(buf, "Invalid sequence, a factor is found (%ld digits).\n", gnbdg(tmp, 10));
 		OutputError(buf);
 		return -1;
-	}
+	}*/
 
 	clear_timer(1);
 	IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
