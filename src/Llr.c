@@ -5963,14 +5963,28 @@ void hash_giant(giant gin, giant gout)
         gout->sign = 1;
 }
 
+void hash_giants(unsigned long fingerprint, giant gin1, giant gin2, giant gout)
+{
+    MD5_CTX context;
+    MD5Init(&context);
+    MD5Update(&context, (unsigned char *)&fingerprint, 4);
+    MD5Update(&context, (unsigned char *)gin1->n, abs(gin1->sign)*4);
+    MD5Update(&context, (unsigned char *)gin2->n, abs(gin2->sign)*4);
+    MD5Final((unsigned char *)gout->n, &context);
+    gout->sign = 2;
+    if (gout->n[1] == 0)
+        gout->sign = 1;
+}
+
 void make_prime(giant g)
 {
     int j;
     g->n[0] |= 1;
-    if (g->sign == 0)
-        g->sign = 1;
-    if (g->sign == 1 && g->n[0] == 1)
-        g->n[0] = 3;
+    if (g->sign < 2)
+    {
+        g->n[1] = 1;
+        g->sign = 2;
+    }
     while (1)
     {
         for (j = 0; j < 168 && gmodul(g, smallprime[j]) != 0; j++);
@@ -6013,7 +6027,7 @@ void make_primer(giant g)
     }
 }
 
-int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp)
+int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
     unsigned long t, i, j, k;
     unsigned long bit, len, ops;
@@ -6074,7 +6088,8 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
     {
         h[i] = allocgiant(4);
         gwtogiant(gwdata, x, tmp);
-        hash_giant(tmp, h[i]);
+        gwtogiant(gwdata, d, tmp2);
+        hash_giants(fingerprint, tmp, tmp2, h[i]);
         make_prime(h[i]);
 
         if (i < t - 1)
@@ -6282,6 +6297,7 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 	unsigned long bit, i, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256];
 	int	saving, random = 0;
+    giant h = NULL;
     double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
 	double timer1;
@@ -6571,58 +6587,62 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
         start_timer(1);
         timer1 = timers[1];
 
+        h = allocgiant(4);
         care = TRUE;
         for (i = 0; i < t; i++)
         {
-            gwtogiant(gwdata, check_d, tmp2);
-            hash_giant(tmp2, tmp);
-            make_prime(tmp);
-            len = bitlen(tmp);
-
-            gwcopy(gwdata, d, u0);
-            bit = 1;
-            while (bit < len) {
-                gwsquare_carefully(gwdata, d);
-                CHECK_IF_ANY_ERROR(d, (bit), len, 1);
-
-                if (bitval(tmp, len - bit - 1))
-                {
-                    gwmul_carefully(gwdata, u0, d);
-                    CHECK_IF_ANY_ERROR(d, (bit), len, 2);
-                }
-                bit++;
-            }
-
             /*IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
             sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
             if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i != *recovery_bit))
             {
+                free(h);
                 sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
                 OutputError(buf);
                 return -1;
             }*/
             gwcopy(gwdata, products[i], u0);
-            gwcopy(gwdata, u0, x);
 
-            gwmul_carefully(gwdata, u0, d);
-            CHECK_IF_ANY_ERROR(d, (i), t, 3);
+            gwtogiant(gwdata, check_d, tmp);
+            gwtogiant(gwdata, u0, tmp2);
+            hash_giants(fingerprint, tmp, tmp2, h);
+            make_prime(h);
+            len = bitlen(h);
 
+            gwcopy(gwdata, d, x);
             bit = 1;
             while (bit < len) {
-                gwsquare_carefully(gwdata, x);
-                CHECK_IF_ANY_ERROR(x, (bit), len, 4);
+                gwsquare_carefully(gwdata, d);
+                CHECK_IF_ANY_ERROR(d, (bit), len, 1);
 
-                if (bitval(tmp, len - bit - 1))
+                if (bitval(h, len - bit - 1))
                 {
-                    gwmul_carefully(gwdata, u0, x);
-                    CHECK_IF_ANY_ERROR(x, (bit), len, 5);
+                    gwmul_carefully(gwdata, x, d);
+                    CHECK_IF_ANY_ERROR(d, (bit), len, 2);
                 }
                 bit++;
             }
 
-            gwmul_carefully(gwdata, x, check_d);
+            gwmul_carefully(gwdata, u0, d);
+            CHECK_IF_ANY_ERROR(d, (i), t, 3);
+
+            gwcopy(gwdata, u0, x);
+            bit = 1;
+            while (bit < len) {
+                gwsquare_carefully(gwdata, u0);
+                CHECK_IF_ANY_ERROR(u0, (bit), len, 4);
+
+                if (bitval(h, len - bit - 1))
+                {
+                    gwmul_carefully(gwdata, x, u0);
+                    CHECK_IF_ANY_ERROR(u0, (bit), len, 5);
+                }
+                bit++;
+            }
+
+            gwmul_carefully(gwdata, u0, check_d);
             CHECK_IF_ANY_ERROR(check_d, (i), t, 6);
         }
+        free(h);
 
         if (random)
         {
@@ -6745,6 +6765,8 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 	return TRUE;
 
 error:
+    if (h != NULL)
+        free(h);
 	return FALSE;
 }
 
@@ -6899,7 +6921,7 @@ int multipointPRP(
     }
     else if (!strcmp(PROOFMODE, "Compress"))
     {
-        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
         *res = FALSE;
@@ -7518,7 +7540,7 @@ int multipointPRP(
 
         if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
         {
-            stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+            stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
             if (stopping == FALSE)
                 goto error;
             //retval = (stopping == TRUE);
@@ -13177,7 +13199,7 @@ restart:
     }
     else if (!strcmp(PROOFMODE, "Compress"))
     {
-        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
         *res = FALSE;
@@ -13699,7 +13721,7 @@ restart:
 
     if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
     {
-        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp);
+        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
         //retval = (stopping == TRUE);
