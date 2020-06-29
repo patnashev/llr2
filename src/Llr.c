@@ -1298,7 +1298,7 @@ int write_gwnum (
 	uint32_t	i, len, bytes;
 
 	tmp = popg (gdata, ((uint32_t) gwdata->bit_length >> 5) + 10);
-	gwtogiant (gwdata, g, tmp);
+	if (gwtogiant (gwdata, g, tmp) < 0) return (FALSE);
 	len = tmp->sign;
 	if (io_write (fd, &len, sizeof (uint32_t)) != sizeof (uint32_t)) return (FALSE);
 	bytes = len * sizeof (uint32_t);
@@ -7306,8 +7306,8 @@ int multipointPRP(
 
 			// d^(b^L)*u0 = d*x
 			gwsub(gwdata, d, check_d);
-			gwtogiant(gwdata, d, tmp);
-			gwtogiant(gwdata, check_d, tmp2);
+			if (gwtogiant(gwdata, d, tmp) < 0) tmp->sign = 0;
+            if (gwtogiant(gwdata, check_d, tmp2) < 0) tmp->sign = 0;
 			if (isZero(tmp) || !isZero(tmp2))
 			{
 				clearline(100);
@@ -7501,8 +7501,8 @@ int multipointPRP(
 	/* 32-bit chunks of the non-standard residue in reverse order. */
 
 	clearline(100);
-	gwtogiant(gwdata, x, tmp);
-	if (!strcmp(PROOFMODE, "VerifyCert"))
+    if (gwtogiant(gwdata, x, tmp) < 0) goto error;
+    if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
 		*res = FALSE;
 		if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
@@ -13492,8 +13492,8 @@ restart:
 				gwsub(gwdata, d, check_d);
 				//gwmul_carefully(gwdata, u0, d);
 				//gwsub(gwdata, x, d);
-			    gwtogiant(gwdata, d, tmp);
-			    gwtogiant(gwdata, check_d, tmp2);
+			    if (gwtogiant(gwdata, d, tmp) < 0) tmp->sign = 0;
+			    if (gwtogiant(gwdata, check_d, tmp2) < 0) tmp->sign = 0;
 			    if (isZero(tmp) || !isZero(tmp2))
 				//if (gwiszero(gwdata, d) || !gwiszero(gwdata, check_d))
 				//if (!gwiszero(gwdata, d))
@@ -13709,7 +13709,7 @@ restart:
 
 	clearline (100);
 
-	gwtogiant (gwdata, x, tmp);		// The modulo reduction is done here
+	if (gwtogiant (gwdata, x, tmp) < 0) goto error;		// The modulo reduction is done here
 	if (strcmp(PROOFMODE, "VerifyCert"))
 		iaddg (1, tmp);					// Compute the (unnormalized) residue
 
