@@ -7528,7 +7528,9 @@ int multipointPRP(
 				mulg(tmp2, tmp);
 				modg(N, tmp);
 			}
-			if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
+            if (tmp->sign == 0)
+                sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)0);
+            else if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
 				sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
 			else
 				sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
@@ -13713,7 +13715,9 @@ restart:
 
 	if (gcompg (N, tmp) != 0 || !strcmp(PROOFMODE, "VerifyCert")) {
 		*res = FALSE;				/* Not a prime */
-		if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
+        if (tmp->sign == 0)
+            sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)0);
+        else if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
 			sprintf (res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
 		else
 			sprintf (res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
@@ -17720,6 +17724,19 @@ void resetGlobals()
 
 	res64[0] = 0;
 	PROOFMODE[0] = 0;
+
+    IniWriteString(INI_FILE, "FFT_Increment", NULL);
+    IniWriteString(INI_FILE, "SlidingWindow", NULL);
+    IniWriteString(INI_FILE, "Gerbicz", NULL);
+    IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+    IniWriteString(INI_FILE, "GerbiczL", NULL);
+    IniWriteString(INI_FILE, "GerbiczL2", NULL);
+    IniWriteString(INI_FILE, "AtnashevM", NULL);
+    IniWriteString(INI_FILE, "ProofCount", NULL);
+    IniWriteString(INI_FILE, "PointsPerL2", NULL);
+    IniWriteString(INI_FILE, "L2PerPoint", NULL);
+    IniWriteString(INI_FILE, "Pietrzak", NULL);
+    IniWriteString(INI_FILE, "CachePoints", NULL);
 }
 
 int isPRP(
@@ -17730,6 +17747,7 @@ int isPRP(
 	int	*res)
 {
 	int	retval;
+    unsigned long bits, smallbase = 0;
 	double dk;
 	char str[sgkbufsize+256];
 
@@ -17737,19 +17755,26 @@ int isPRP(
 
 	gk = newgiant(strlen(sgk) / 2 + 8);	// Allocate one byte per decimal digit + spares
 	ctog(sgk, gk);						// Convert b string to giant
+    klen = bitlen(gk);
 
 	giant gb = newgiant(strlen(sgb) / 2 + 8);	// Allocate one byte per decimal digit + spares
 	ctog(sgb, gb);						// Convert b string to giant
+    if (abs(gb->sign) == 1)					// Test if the base is a small integer
+        smallbase = gb->n[0];
 
-	unsigned long bits = n*bitlen(gb) + bitlen(gk);
+    if (smallbase)
+        bits = (unsigned long)((n * log((double)smallbase)) / log(2.0) + bitlen(gk));
+    else
+        bits = n * bitlen(gb) + bitlen(gk);
 	N = newgiant((bits >> 4) + 8);		// Allocate memory for N
 
 	gtog(gb, N);
 	power(N, n);
 	mulg(gk, N);
 	iaddg(c, N);
+    Nlen = bitlen(N);
 
-	if (klen > 53 || generic) {			// we must use generic reduction
+	if (klen > 53 || generic || !smallbase) {			// we must use generic reduction
 		dk = 0.0;
 	}
 	else {								// we can use DWT, compute k as a double
