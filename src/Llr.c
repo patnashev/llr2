@@ -432,6 +432,7 @@ char ERRMSG8[] = "Unrecoverable error, Restarting with next larger FFT length...
 //char ERRMSG9[] = "Too much errors while using the standard method ; continuing with a slower, more reliable one.\n";
 char ERRMSG9[] = "Too much errors ; Restarting with next larger FFT length...\n";
 char WRITEFILEERR[] = "Error writing intermediate file: %s\n";
+char FFTERR[] = "Invalid FFT data.\n";
 
 void	trace(int n) {			// Debugging tool...
 	char buf[100];
@@ -1260,6 +1261,13 @@ void OutputError(
 	writeError(buf);
 }
 
+int gwtogiantVerbose(gwhandle *gwdata, gwnum gg, giant v)
+{
+    int ret = gwtogiant(gwdata, gg, v);
+    if (ret < 0)
+        OutputError(FFTERR);
+    return ret;
+}
 
 /* Read and write intermediate results to a file */
 
@@ -1298,7 +1306,7 @@ int write_gwnum (
 	uint32_t	i, len, bytes;
 
 	tmp = popg (gdata, ((uint32_t) gwdata->bit_length >> 5) + 10);
-	if (gwtogiant (gwdata, g, tmp) < 0) return (FALSE);
+	if (gwtogiantVerbose(gwdata, g, tmp) < 0) return (FALSE);
 	len = tmp->sign;
 	if (io_write (fd, &len, sizeof (uint32_t)) != sizeof (uint32_t)) return (FALSE);
 	bytes = len * sizeof (uint32_t);
@@ -6210,7 +6218,7 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
         if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, i, d, NULL)) {
             sprintf(buf, WRITEFILEERR, proofpoint);
             OutputError(buf);
-            return FALSE;
+            goto error;
         }
     }
     for (k = 1; k < t; k++)
@@ -6643,6 +6651,7 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             CHECK_IF_ANY_ERROR(check_d, (i), t, 6);
         }
         free(h);
+        h = NULL;
 
         if (random)
         {
@@ -7306,8 +7315,8 @@ int multipointPRP(
 
 			// d^(b^L)*u0 = d*x
 			gwsub(gwdata, d, check_d);
-			if (gwtogiant(gwdata, d, tmp) < 0) tmp->sign = 0;
-            if (gwtogiant(gwdata, check_d, tmp2) < 0) tmp->sign = 0;
+			if (gwtogiantVerbose(gwdata, d, tmp) < 0) tmp->sign = 0;
+            if (gwtogiantVerbose(gwdata, check_d, tmp2) < 0) tmp->sign = 0;
 			if (isZero(tmp) || !isZero(tmp2))
 			{
 				clearline(100);
@@ -7501,7 +7510,7 @@ int multipointPRP(
 	/* 32-bit chunks of the non-standard residue in reverse order. */
 
 	clearline(100);
-    if (gwtogiant(gwdata, x, tmp) < 0) goto error;
+    if (gwtogiantVerbose(gwdata, x, tmp) < 0) goto error;
     if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
 		*res = FALSE;
@@ -13492,8 +13501,8 @@ restart:
 				gwsub(gwdata, d, check_d);
 				//gwmul_carefully(gwdata, u0, d);
 				//gwsub(gwdata, x, d);
-			    if (gwtogiant(gwdata, d, tmp) < 0) tmp->sign = 0;
-			    if (gwtogiant(gwdata, check_d, tmp2) < 0) tmp->sign = 0;
+			    if (gwtogiantVerbose(gwdata, d, tmp) < 0) tmp->sign = 0;
+			    if (gwtogiantVerbose(gwdata, check_d, tmp2) < 0) tmp->sign = 0;
 			    if (isZero(tmp) || !isZero(tmp2))
 				//if (gwiszero(gwdata, d) || !gwiszero(gwdata, check_d))
 				//if (!gwiszero(gwdata, d))
@@ -13709,7 +13718,7 @@ restart:
 
 	clearline (100);
 
-	if (gwtogiant (gwdata, x, tmp) < 0) goto error;		// The modulo reduction is done here
+	if (gwtogiantVerbose(gwdata, x, tmp) < 0) goto error;		// The modulo reduction is done here
 	if (strcmp(PROOFMODE, "VerifyCert"))
 		iaddg (1, tmp);					// Compute the (unnormalized) residue
 
