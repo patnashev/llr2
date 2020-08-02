@@ -8575,7 +8575,7 @@ restart:
 
 /* Do the PRP test */
 
-		if (IniGetInt(INI_FILE, "Gerbicz", smallbase == 2 ? 1 : 0) || PROOFMODE[0])
+		if (IniGetInt(INI_FILE, "Gerbicz", b == 2 ? 1 : 0) || PROOFMODE[0])
 			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
