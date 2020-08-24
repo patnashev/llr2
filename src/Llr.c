@@ -2321,6 +2321,7 @@ int setupok (gwhandle *gwdata, int errcode)		// Test if the call to gwsetup is s
 
 
 char res64[17]; /* VP : This variable has been made global */
+char cert64[17];
 
 #ifndef X86_64
 
@@ -6088,11 +6089,11 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
 
     for (k = 1; k < t; k++)
         tree[k] = NULL;
-    for (k = 1; k < t; k++)
+    for (k = 1; k <= t; k++)
         h[k] = NULL;
 
     ops = 0;
-    for (i = 1; i < t; i++)
+    for (i = 1; i <= t; i++)
     {
         h[i] = allocgiant(4);
         gwtogiant(gwdata, x, tmp);
@@ -6100,51 +6101,51 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
         hash_giants(fingerprint, tmp, tmp2, h[i]);
         make_prime(h[i]);
 
-        if (i < t - 1)
-        {
-            gtog(h[i], tmp);
-            gwcopy(gwdata, d, check_d);
-            bit = 1;
-            len = bitlen(tmp);
-            while (bit < len) {
-                if ((ops != lasterr_point) || !maxerr_recovery_mode[1]) {
-                    gwsquare(gwdata, d);
-                    care = FALSE;
-                }
-                else {
-                    gwsquare_carefully(gwdata, d);
-                    care = TRUE;
-                }
-                CHECK_IF_ANY_ERROR(d, (ops), i, 1);
-                ops++;
-
-                if (bitval(tmp, len - bit - 1))
-                {
-                    if ((ops != lasterr_point) || !maxerr_recovery_mode[2]) {
-                        gwsafemul(gwdata, check_d, d);
-                        care = FALSE;
-                    }
-                    else {
-                        gwmul_carefully(gwdata, check_d, d);
-                        care = TRUE;
-                    }
-                    CHECK_IF_ANY_ERROR(d, (ops), i, 2);
-                    ops++;
-                }
-                bit++;
-            }
-
-            if ((ops != lasterr_point) || !maxerr_recovery_mode[3]) {
-                gwsafemul(gwdata, d, x);
+        gtog(h[i], tmp);
+        gwcopy(gwdata, d, check_d);
+        bit = 1;
+        len = bitlen(tmp);
+        while (bit < len) {
+            if ((ops != lasterr_point) || !maxerr_recovery_mode[1]) {
+                gwsquare(gwdata, d);
                 care = FALSE;
             }
             else {
-                gwmul_carefully(gwdata, d, x);
+                gwsquare_carefully(gwdata, d);
                 care = TRUE;
             }
-            CHECK_IF_ANY_ERROR(x, (ops), i, 3);
+            CHECK_IF_ANY_ERROR(d, (ops), i, 1);
             ops++;
+
+            if (bitval(tmp, len - bit - 1))
+            {
+                if ((ops != lasterr_point) || !maxerr_recovery_mode[2]) {
+                    gwsafemul(gwdata, check_d, d);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, check_d, d);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(d, (ops), i, 2);
+                ops++;
+            }
+            bit++;
         }
+
+        if ((ops != lasterr_point) || !maxerr_recovery_mode[3]) {
+            gwsafemul(gwdata, d, x);
+            care = FALSE;
+        }
+        else {
+            gwmul_carefully(gwdata, d, x);
+            care = TRUE;
+        }
+        CHECK_IF_ANY_ERROR(x, (ops), i, 3);
+        ops++;
+
+        if (i == t)
+            break;
 
         tree[i] = gwalloc(gwdata);
         for (j = 0; j < (1UL << i); j++)
@@ -6226,12 +6227,21 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
     for (k = 1; k < t; k++)
         free(h[k]);
 
+    gwtogiant(gwdata, x, tmp);
+    if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
+        sprintf(cert64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+    else
+        sprintf(cert64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+
     sprintf(buf, "Compressed %lu points to %lu products.  Time : ", s, t);
     start_timer(0);
     timers[0] = timer0;
     end_timer(0);
-    write_timer(buf+strlen(buf), 0, TIMER_CLR | TIMER_NL);
+    write_timer(buf+strlen(buf), 0, TIMER_NL);
     OutputStr(buf);
+    sprintf(buf, "Certificate RES64: %s  Time : ", cert64);
+    write_timer(buf+strlen(buf), 0, TIMER_CLR | TIMER_NL);
+    writeResults(buf);
     timers[1] = timer1;
     start_timer(1);
 
@@ -6667,6 +6677,15 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 
         if (random)
         {
+            gwtogiant(gwdata, check_d, tmp);
+            if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
+                sprintf(cert64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+            else
+                sprintf(cert64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+
+            sprintf(buf, "Raw certificate RES64: %s\n", cert64);
+            OutputBoth(buf);
+
             tmp->sign = 0;
             while (tmp->sign == 0)
             {
