@@ -6304,7 +6304,7 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 {
 	unsigned long bit, i, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256];
-	int	saving, random = 0;
+	int	saving, random = 0, cache;
     giant h = NULL;
     double	reallyminerr = 1.0;
 	double	reallymaxerr = 0.0;
@@ -6552,25 +6552,30 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             return -1;
         }
 
-        gwnum* products = (gwnum*)malloc(sizeof(gwnum)*(t + 1));
-        for (i = 0; i <= t; i++)
-            products[i] = gwalloc(gwdata);
-
-        for (i = 0; i < t; i++)
+        gwnum* products = NULL;
+        cache = IniGetInt(INI_FILE, "CachePoints", 1);
+        if (cache)
         {
-            IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
-            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-            if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, products[i], NULL) || (i != *recovery_bit))
+            products = (gwnum*)malloc(sizeof(gwnum)*(t + 1));
+            for (i = 0; i <= t; i++)
+                products[i] = gwalloc(gwdata);
+
+            for (i = 0; i < t; i++)
             {
-                sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
-                OutputError(buf);
-                return -1;
+                IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+                sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+                if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, products[i], NULL) || (i != *recovery_bit))
+                {
+                    sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+                    OutputError(buf);
+                    return -1;
+                }
             }
         }
 
         IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
         sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, products[t], NULL))
+        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, cache ? products[t] : u0, NULL))
         {
             sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
             OutputError(buf);
@@ -6584,31 +6589,38 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             return -1;
         }
         M /= s;
-        gwcopy(gwdata, products[t], check_d);
+        gwcopy(gwdata, cache ? products[t] : u0, check_d);
 
-        sprintf(buf, "Points loaded.  Time : ");
-        start_timer(1);
-        timers[1] = timer1;
-        end_timer(1);
-        write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
-        OutputStr(buf);
-        start_timer(1);
-        timer1 = timers[1];
+        if (cache)
+        {
+            sprintf(buf, "Points loaded.  Time : ");
+            start_timer(1);
+            timers[1] = timer1;
+            end_timer(1);
+            write_timer(buf+strlen(buf), 1, TIMER_CLR | TIMER_NL);
+            OutputStr(buf);
+            start_timer(1);
+            timer1 = timers[1];
+        }
 
         h = allocgiant(4);
         care = TRUE;
         for (i = 0; i < t; i++)
         {
-            /*IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
-            sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-            if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i != *recovery_bit))
+            if (cache)
+                gwcopy(gwdata, products[i], u0);
+            else
             {
-                free(h);
-                sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
-                OutputError(buf);
-                return -1;
-            }*/
-            gwcopy(gwdata, products[i], u0);
+                IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
+                sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
+                if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL) || (i != *recovery_bit))
+                {
+                    free(h);
+                    sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+                    OutputError(buf);
+                    return -1;
+                }
+            }
 
             gwtogiant(gwdata, check_d, tmp);
             gwtogiant(gwdata, u0, tmp2);
@@ -6697,19 +6709,26 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             }
         }
 
-        /*IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-        sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
-        if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL))
+        if (cache)
+            gwcopy(gwdata, products[t], u0);
+        else
         {
-            sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
-            OutputError(buf);
-            return -1;
-        }*/
-        gwcopy(gwdata, products[t], u0);
+            IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
+            if (!fileExists(proofpoint) || !readFromFile(gwdata, gdata, proofpoint, fingerprint, recovery_bit, u0, NULL))
+            {
+                sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
+                OutputError(buf);
+                return -1;
+            }
+        }
 
-        for (i = 0; i <= t; i++)
-            gwfree(gwdata, products[i]);
-        free(products);
+        if (cache)
+        {
+            for (i = 0; i <= t; i++)
+                gwfree(gwdata, products[i]);
+            free(products);
+        }
     }
 
 	gwtogiant(gwdata, check_d, tmp);
@@ -6777,6 +6796,315 @@ error:
     if (h != NULL)
         free(h);
 	return FALSE;
+}
+
+int findgbpf(giant gb);
+
+int checkRootsPlus(giant gb, unsigned long iters, gwhandle *gwdata, gwnum u0, gwnum x, giant tmp)
+{
+    unsigned long bit, len, power;
+    int	jmax, j;
+    double order;
+    char	buf[sgkbufsize+256];
+    int	saving;
+    double	reallyminerr = 1.0;
+    double	reallymaxerr = 0.0;
+    double timer1;
+
+    power = IniGetInt(INI_FILE, "RootsSecurity", 64);
+
+    end_timer(0);
+    clear_timer(0);
+    start_timer(0);
+    end_timer(1);
+    timer1 = timers[1];
+
+    gwcopy(gwdata, x, u0);
+    bit = 1;
+    while (bit < klen) {
+        gwsquare_carefully(gwdata, x);
+        CHECK_IF_ANY_ERROR(x, (bit), klen, 0);
+
+        if (bitval(gk, klen - bit - 1))
+        {
+            gwmul_carefully(gwdata, u0, x);
+            CHECK_IF_ANY_ERROR(x, (bit), klen, 1);
+        }
+        bit++;
+    }
+
+    gwtogiant(gwdata, x, tmp);
+    if (gb == NULL) // Proth
+    {
+        iaddg(1, tmp);
+        if (gcompg(N, tmp) == 0)
+        {
+            sprintf(buf, "Roots of unity check failed at k.\n");
+            OutputError(buf);
+            return FALSE;
+        }
+
+        if (iters < power)
+        {
+            bit = iters;
+            while (bit < power) {
+                gwsquare_carefully(gwdata, x);
+                CHECK_IF_ANY_ERROR(x, (bit), power, 2);
+                bit++;
+            }
+
+            gwtogiant(gwdata, x, tmp);
+            if (isone(tmp))
+            {
+                sprintf(buf, "Roots of unity check failed at 2^64.\n");
+                OutputError(buf);
+                return FALSE;
+            }
+        }
+    }
+    else
+    {
+        if (isone(tmp))
+        {
+            sprintf(buf, "Roots of unity check failed at k.\n");
+            OutputError(buf);
+            return FALSE;
+        }
+
+        if (iters < power)
+        {
+            ultog(1, tmp);
+
+            findgbpf(gb);
+            for (jmax = 29; (jmax>0) && !bpf[jmax]; jmax--);
+            for (j = 0; j <= jmax; j++)
+            {
+                if (bpf[j] == 1)
+                {
+                    if (bitlen(gbpf[j]) > power)
+                        continue;
+                    order = iters*vpf[j]*bitlen(gbpf[j]);
+                }
+                else
+                    order = iters*vpf[j]*log((double)bpf[j])/log(2.0);
+                while (order < power)
+                {
+                    if (bpf[j] == 1)
+                    {
+                        //gtoc(gbpf[j], buf, 100);
+                        //OutputStr(buf);
+                        //OutputStr("\n");
+                        mulg(gbpf[j], tmp);
+                        order += bitlen(gbpf[j]);
+                    }
+                    else
+                    {
+                        //sprintf(buf, "%d\n", bpf[j]);
+                        //OutputStr(buf);
+                        ulmulg(bpf[j], tmp);
+                        order += log((double)bpf[j])/log(2.0);
+                    }
+                }
+            }
+
+            len = bitlen(tmp);
+            gwcopy(gwdata, x, u0);
+            bit = 1;
+            while (bit < len) {
+                gwsquare_carefully(gwdata, x);
+                CHECK_IF_ANY_ERROR(x, (bit), len, 2);
+
+                if (bitval(tmp, len - bit - 1))
+                {
+                    gwmul_carefully(gwdata, u0, x);
+                    CHECK_IF_ANY_ERROR(x, (bit), len, 3);
+                }
+                bit++;
+            }
+
+            gwtogiant(gwdata, x, tmp);
+            if (isone(tmp))
+            {
+                sprintf(buf, "Roots of unity check failed at b^64.\n");
+                OutputError(buf);
+                return FALSE;
+            }
+        }
+    }
+
+    sprintf(buf, "Roots of unity check passed.  Time : ");
+    end_timer(0);
+    write_timer(buf+strlen(buf), 0, TIMER_CLR | TIMER_NL);
+    OutputBoth(buf);
+    timers[1] = timer1;
+    start_timer(1);
+
+    return TRUE;
+
+error:
+    return FALSE;
+}
+
+inline int isFactor(giant gb, unsigned long n, unsigned long nbit, uint32_t p)
+{
+    uint32_t b = gmodul(gb, p);
+    uint64_t mult = b;
+    for (unsigned long i = nbit; i > 0; i >>= 1)
+    {
+        mult *= mult;
+        if (mult >= (1ULL << 32)) mult %= p;
+        if ((n & i) != 0)
+        {
+            mult *= b;
+            if (mult >= (1ULL << 32)) mult %= p;
+        }
+    }
+    mult *= gmodul(gk, p);
+    mult %= p;
+    return (mult == 2);
+}
+
+int checkRootsMinus(giant gb, unsigned long n, long c, gwhandle *gwdata, gwnum u0, gwnum x, giant tmp)
+{
+    unsigned long bit, len, power, i, j, nbit;
+    uint32_t p, t;
+    uint64_t mult;
+    char	buf[sgkbufsize+256];
+    int	saving;
+    double	reallyminerr = 1.0;
+    double	reallymaxerr = 0.0;
+    double timer1;
+    uint32_t *primes;
+    char *bitmap;
+
+    power = IniGetInt(INI_FILE, "RootsSecurity", 28);
+    if (power > 31)
+        power = 31;
+
+    end_timer(0);
+    clear_timer(0);
+    start_timer(0);
+    end_timer(1);
+    timer1 = timers[1];
+
+    ultog(2, tmp);
+    i = 1;
+    for (i = 1; !bitval(N, i); i++)
+        ulmulg(2, tmp);
+
+    for (nbit = 1; nbit <= n; nbit <<= 1);
+    nbit >>= 2;
+
+    primes = malloc(6600*4);
+    primes[0] = 2;
+    primes[1] = 3;
+    len = 2;
+    p = 5;
+    while (p < (1 << 16))
+    {
+        for (i = 0; primes[i]*primes[i] < p && p%primes[i] != 0; i++);
+        if (p%primes[i] != 0)
+        {
+            primes[len] = p;
+            len++;
+        }
+        p += 2;
+        for (i = 0; primes[i]*primes[i] < p && p%primes[i] != 0; i++);
+        if (p%primes[i] != 0)
+        {
+            primes[len] = p;
+            len++;
+        }
+        p += 4;
+    }
+
+    for (i = 1; i < len; i++)
+    {
+        p = primes[i];
+        if (isFactor(gb, n, nbit, p))
+        {
+            mult = p;
+            while (1)
+            {
+                //sprintf(buf, "%d\n", p);
+                //OutputStr(buf);
+                ulmulg(p, tmp);
+                mult *= p;
+                if (mult > (1ULL << 32) || !isFactor(gb, n, nbit, (uint32_t)mult))
+                    break;
+            }
+        }
+    }
+
+    t = primes[len - 1];
+    bitmap = malloc(1000000);
+    while (t < (1 << power))
+    {
+        memset(bitmap, 0, 1000000);
+        for (i = 1; i < len && primes[i]*primes[i] < t + 2000000; i++)
+        {
+            j = primes[i] - t%primes[i];
+            for (j = ((j & 1) != 0 ? (j + primes[i]) : j)/2; j < 1000000; j += primes[i])
+                bitmap[j] = 1;
+        }
+        for (j = 1; j < 1000000; j++)
+            if (!bitmap[j])
+            {
+                p = t + j*2;
+                if (isFactor(gb, n, nbit, p))
+                {
+                    mult = p;
+                    while (1)
+                    {
+                        //sprintf(buf, "%d\n", p);
+                        //OutputStr(buf);
+                        ulmulg(p, tmp);
+                        mult *= p;
+                        if (mult > (1ULL << 32) || !isFactor(gb, n, nbit, (uint32_t)mult))
+                            break;
+                    }
+                }
+            }
+        t = p;
+    }
+
+    free(bitmap);
+    free(primes);
+
+    len = bitlen(tmp);
+    gwcopy(gwdata, x, u0);
+    bit = 1;
+    while (bit < len) {
+        gwsquare_carefully(gwdata, x);
+        CHECK_IF_ANY_ERROR(x, (bit), len, 2);
+
+        if (bitval(tmp, len - bit - 1))
+        {
+            gwmul_carefully(gwdata, u0, x);
+            CHECK_IF_ANY_ERROR(x, (bit), len, 3);
+        }
+        bit++;
+    }
+
+    gwtogiant(gwdata, x, tmp);
+    if (isone(tmp))
+    {
+        sprintf(buf, "Roots of unity check failed.\n");
+        OutputError(buf);
+        return FALSE;
+    }
+
+    sprintf(buf, "Roots of unity check passed.  Time : ");
+    end_timer(0);
+    write_timer(buf+strlen(buf), 0, TIMER_CLR | TIMER_NL);
+    OutputBoth(buf);
+    timers[1] = timer1;
+    start_timer(1);
+
+    return TRUE;
+
+error:
+    return FALSE;
 }
 
 void clearErrorPoints()
@@ -6956,6 +7284,7 @@ int multipointPRP(
         strcpy(PROOFMODE, "VerifyRes");
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
+        CUMULATIVE_TIMING = 1;
     }
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
@@ -7556,6 +7885,24 @@ int multipointPRP(
                 goto error;
             //retval = (stopping == TRUE);
             //goto cleanup;
+        }
+
+        if (!*res && !strcmp(PROOFMODE, "VerifyRes") && IniGetInt(INI_FILE, "CheckRoots", 0))
+        {
+            if (c == 1 && !checkRootsPlus(gb, iters*L/explen, gwdata, u0, x, tmp))
+            {
+                retval = FALSE;
+                goto cleanup;
+            }
+            if (c != 1)
+            {
+                gianttogw(gwdata, tmp, x);
+                if (!checkRootsMinus(gb, n, c - 1, gwdata, u0, x, tmp))
+                {
+                    retval = FALSE;
+                    goto cleanup;
+                }
+            }
         }
     }
 
@@ -13236,6 +13583,7 @@ restart:
         strcpy(PROOFMODE, "VerifyRes");
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
+        CUMULATIVE_TIMING = 1;
     }
 	else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
@@ -13717,7 +14065,7 @@ restart:
 /* See if we've found a Proth prime.  If not, format a 64-bit residue. */
 
 	clearline (100);
-
+    
 	if (gwtogiantVerbose(gwdata, x, tmp) < 0) goto error;		// The modulo reduction is done here
 	if (strcmp(PROOFMODE, "VerifyCert"))
 		iaddg (1, tmp);					// Compute the (unnormalized) residue
@@ -13739,6 +14087,12 @@ restart:
             goto error;
         //retval = (stopping == TRUE);
         //goto cleanup;
+    }
+
+    if (!*res && !strcmp(PROOFMODE, "VerifyRes") && IniGetInt(INI_FILE, "CheckRoots", 0) && !checkRootsPlus(NULL, iters, gwdata, u0, x, tmp))
+    {
+        retval = FALSE;
+        goto cleanup;
     }
 
 	pushg(gdata, 2);
