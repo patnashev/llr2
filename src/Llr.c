@@ -7902,8 +7902,11 @@ int multipointPRP(
             stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
             if (stopping == FALSE)
                 goto error;
-            //retval = (stopping == TRUE);
-            //goto cleanup;
+            if (stopping == -1)
+            {
+                retval = FALSE;
+                goto cleanup;
+            }
         }
 
         if (!*res && !strcmp(PROOFMODE, "VerifyRes") && IniGetInt(INI_FILE, "CheckRoots", 0))
