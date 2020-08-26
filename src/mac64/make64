@@ -8,5 +8,5 @@ COMPOBJS = lprime.o
 compile: $(COMPOBJS)
 
 lprime.o: ../lprime.c
-        $(CC) $(CFLAGS) -c ../lprime.c
+	$(CC) $(CFLAGS) -c ../lprime.c
 
