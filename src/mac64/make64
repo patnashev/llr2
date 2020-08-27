@@ -1,0 +1,12 @@
+# Compile the LLR source files for X86_64 architecture
+
+CC = gcc
+CFLAGS = -I.. -I../gwnum -DX86_64 -O2
+
+COMPOBJS = lprime.o
+
+compile: $(COMPOBJS)
+
+lprime.o: ../lprime.c
+	$(CC) $(CFLAGS) -c ../lprime.c
+
