@@ -3,7 +3,7 @@
 CC = gcc
 
 LFLAGS =
-LIBELF = ../gwnum/amd64/release/gwnum.a
+LIBELF = ../gwnum/mac64/gwnum.a
 LIBS2  = $(LIBELF) -lm -lpthread
 
 COMPOBJS = lprime.o
