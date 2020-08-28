@@ -7898,6 +7898,7 @@ int multipointPRP(
                     ulmulg(a, tmp);
                 modg(N, tmp);
                 if (gwtogiantVerbose(gwdata, x, tmp2) < 0) goto error;
+                modg(N, tmp2);
                 if (gcompg(tmp, tmp2) != 0)
                 {
                     sprintf(buf, RESIDUEERR);
