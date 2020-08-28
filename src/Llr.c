@@ -433,6 +433,7 @@ char ERRMSG8[] = "Unrecoverable error, Restarting with next larger FFT length...
 char ERRMSG9[] = "Too much errors ; Restarting with next larger FFT length...\n";
 char WRITEFILEERR[] = "Error writing intermediate file: %s\n";
 char FFTERR[] = "Invalid FFT data.\n";
+char RESIDUEERR[] = "Residue calculation error.\n";
 
 void	trace(int n) {			// Debugging tool...
 	char buf[100];
@@ -7891,6 +7892,20 @@ int multipointPRP(
 				sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
 			else
 				sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+            if (c < 1)
+            {
+                for (i = 1 - c; i > 0; i--)
+                    ulmulg(a, tmp);
+                modg(N, tmp);
+                if (gwtogiantVerbose(gwdata, x, tmp2) < 0) goto error;
+                if (gcompg(tmp, tmp2) != 0)
+                {
+                    sprintf(buf, RESIDUEERR);
+                    OutputError(buf);
+                    restarting = TRUE;
+                    goto error;
+                }
+            }
 			sprintf(buf, "%s is not prime.  RES64: %s", str, res64);
 		}
 		else {
