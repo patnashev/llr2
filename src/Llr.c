@@ -2322,7 +2322,7 @@ int setupok (gwhandle *gwdata, int errcode)		// Test if the call to gwsetup is s
 
 
 char res64[17]; /* VP : This variable has been made global */
-char cert64[17];
+char cert64[34];
 
 #ifndef X86_64
 
@@ -6240,7 +6240,7 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
     end_timer(0);
     write_timer(buf+strlen(buf), 0, TIMER_NL);
     OutputStr(buf);
-    sprintf(buf, "Certificate RES64: %s  Time : ", cert64);
+    sprintf(buf, "Raw certificate RES64: %s  Time : ", cert64);
     write_timer(buf+strlen(buf), 0, TIMER_CLR | TIMER_NL);
     writeResults(buf);
     timers[1] = timer1;
@@ -6314,7 +6314,7 @@ void grnd(struct mt_state *x, int bits, giant a)
 int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
 	unsigned long bit, i, len, M, t;
-	char	proofpoint[64], buf[sgkbufsize+256];
+	char	proofpoint[64], buf[sgkbufsize+256], *certRes = cert64;
 	int	saving, random = 0, cache;
     giant h = NULL;
     double	reallyminerr = 1.0;
@@ -6686,6 +6686,8 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 
             sprintf(buf, "Raw certificate RES64: %s\n", cert64);
             OutputBoth(buf);
+            cert64[16] = '/';
+            certRes = cert64 + 17;
 
             tmp->sign = 0;
             while (tmp->sign == 0)
@@ -6778,11 +6780,11 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
 
 	gwtogiant(gwdata, check_d, tmp);
 	if (abs(tmp->sign) < 2)		// make a 32 bit residue correct !!
-		sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+		sprintf(certRes, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
 	else
-		sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+		sprintf(certRes, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
 
-	sprintf(buf, "Certificate RES64: %s  Time : ", res64);
+	sprintf(buf, "Certificate RES64: %s  Time : ", certRes);
 	start_timer(1);
 	timers[1] = timer1;
 	end_timer(1);
@@ -18124,6 +18126,7 @@ void resetGlobals()
     total_error_points = 0;
 
 	res64[0] = 0;
+    cert64[0] = 0;
 	PROOFMODE[0] = 0;
 
     IniWriteString(INI_FILE, "FFT_Increment", NULL);
