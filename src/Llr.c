@@ -5944,7 +5944,7 @@ error:
 	return (-1);
 }
 
-gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, unsigned long i, unsigned long M, gwnum *points, gwnum r)
+gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, unsigned long i, unsigned long bit, gwnum *points, gwnum r)
 {
     unsigned long bits;
 
@@ -5953,7 +5953,7 @@ gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t finge
 
     IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
     sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
-    if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, r, NULL) || (bits != i*M + 1))
+    if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, r, NULL) || (bits != bit + 1))
     {
         sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
         OutputError(buf);
@@ -6037,7 +6037,7 @@ void make_primer(giant g)
     }
 }
 
-int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
+int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M, char *recoverypoint, char *productpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, gwnum *points, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
     unsigned long t, i, j, k;
     unsigned long bit, len, ops;
@@ -6070,11 +6070,11 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
         return -1;
     }
 
-    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s, M, points, u0)) == NULL)
+    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s, pointPowers != NULL ? pointPowers[s] : s*M, points, u0)) == NULL)
         return -1;
     gwcopy(gwdata, r, x);
 
-    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s/2, M, points, u0)) == NULL)
+    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s/2, pointPowers != NULL ? pointPowers[s/2] : s/2*M, points, u0)) == NULL)
         return -1;
     gwcopy(gwdata, r, d);
 
@@ -6151,7 +6151,8 @@ int compressPoints(unsigned long s, unsigned long M, char *recoverypoint, char *
         tree[i] = gwalloc(gwdata);
         for (j = 0; j < (1UL << i); j++)
         {
-            if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, (1 + j*2) << (t - i - 1), M, points, u0)) == NULL)
+            k = (1 + j*2) << (t - i - 1);
+            if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, k, pointPowers != NULL ? pointPowers[k] : k*M, points, u0)) == NULL)
             {
                 for (k = 1; k <= i; k++)
                     gwfree(gwdata, tree[k]);
@@ -6311,7 +6312,7 @@ void grnd(struct mt_state *x, int bits, giant a)
 		a->sign--;
 }
 
-int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
+int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long s, int a, char *recoverypoint, char *productpoint, uint32_t fingerprint, unsigned long *recovery_bit, gwhandle *gwdata, ghandle *gdata, gwnum u0, gwnum x, gwnum d, gwnum check_d, giant tmp, giant tmp2)
 {
 	unsigned long bit, i, len, M, t;
 	char	proofpoint[64], buf[sgkbufsize+256], *certRes = cert64;
@@ -6593,13 +6594,14 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             return -1;
         }
         M = *recovery_bit - 1;
-        if (M <= 1 || M > n || M%s != 0)
+        if (M <= 1 || M > n || (pointPowers == NULL && M%s != 0) || (pointPowers != NULL && M != n))
         {
             sprintf(buf, "Incorrect M.\n");
             OutputError(buf);
             return -1;
         }
-        M /= s;
+        if (pointPowers == NULL)
+            M /= s;
         gwcopy(gwdata, cache ? products[t] : u0, check_d);
 
         if (cache)
@@ -6638,6 +6640,16 @@ int buildCertificate(unsigned long n, unsigned long s, int a, char *recoverypoin
             hash_giants(fingerprint, tmp, tmp2, h);
             make_prime(h);
             len = bitlen(h);
+
+            if (pointPowers != NULL)
+            {
+                if (M%2 != 0)
+                {
+                    gwsquare_carefully(gwdata, d);
+                    CHECK_IF_ANY_ERROR(d, (0), len, 1);
+                }
+                M /= 2;
+            }
 
             gwcopy(gwdata, d, x);
             bit = 1;
@@ -6903,7 +6915,7 @@ int checkRootsPlus(giant gb, unsigned long iters, gwhandle *gwdata, gwnum u0, gw
             {
                 if (bpf[j] == 1)
                 {
-                    if (bitlen(gbpf[j]) > power)
+                    if (bitlen(gbpf[j]) > (int)power)
                         continue;
                     order = iters*vpf[j]*bitlen(gbpf[j]);
                 }
@@ -7060,7 +7072,7 @@ int checkRootsMinus(giant gb, unsigned long n, long c, gwhandle *gwdata, gwnum u
 
     t = primes[len - 1];
     bitmap = malloc(1000000);
-    while (t < (1 << power))
+    while (t < ((uint32_t)1 << power))
     {
         memset(bitmap, 0, 1000000);
         for (i = 1; i < len && primes[i]*primes[i] < t + 2000000; i++)
@@ -7280,7 +7292,7 @@ int multipointPRP(
     }
     else if (!strcmp(PROOFMODE, "Compress"))
     {
-        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
+        stopping = compressPoints(NULL, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
         *res = FALSE;
@@ -7294,7 +7306,7 @@ int multipointPRP(
         if (verbose || restarting) {
             writeError(buf);
         }
-        stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        stopping = buildCertificate(total, NULL, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -7917,7 +7929,7 @@ int multipointPRP(
 
         if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
         {
-            stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
+            stopping = compressPoints(NULL, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
             if (stopping == FALSE)
                 goto error;
             if (stopping == -1)
@@ -13236,7 +13248,9 @@ int isProthP(
 	char	checkpoint[20], recoverypoint[20], productpoint[20], proofpoint[20], buf[sgkbufsize+256],
 		str[sgkbufsize+256], fft_desc[256], sgk1[sgkbufsize];
     uint32_t fingerprint;
-	long	write_time = DISK_WRITE_TIME * 60;
+    unsigned long* pointPowers;
+    unsigned long curPoint;
+    long	write_time = DISK_WRITE_TIME * 60;
 	int	resaprcl, echk, saving, stopping, echkGerbicz = +1;
 	time_t	start_time, current_time;
     double timer1;
@@ -13539,6 +13553,33 @@ restart:
     M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
     L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
     L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+    pointPowers = NULL;
+    if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "BuildCert"))
+    {
+        pointPowers = malloc((s + 1)*sizeof(long));
+        if (IniGetInt(INI_FILE, "Pietrzak", 0))
+        {
+            unsigned long *pointTmp = malloc(s*sizeof(long));
+            pointPowers[0] = pointTmp[0] = 0;
+            pointPowers[s] = total;
+            M = total;
+            for (bit = 1; bit < s; bit <<= 1)
+            {
+                if (M%2 != 0)
+                    for (bits = 0; bits < s; bits++)
+                        pointTmp[bits]++;
+                M /= 2;
+                for (bits = 0; bits < bit; bits++)
+                    pointPowers[s/bit/2 + s/bit*bits] = pointTmp[s/bit/2 + s/bit*bits] = pointTmp[s/bit*bits] + M;
+            }
+            free(pointTmp);
+        }
+        else
+        {
+            for (curPoint = 0; curPoint <= s; curPoint++)
+                pointPowers[curPoint] = curPoint*M;
+        }
+    }
 
     io_report(fft_desc, gwfftlen(gwdata), a, L, L2, M, net);
 
@@ -13565,23 +13606,22 @@ restart:
 
     recovery_bit = 0;
     saved_recovery_bit = total;
-	if (!strcmp(PROOFMODE, "RedoMissing"))
+    curPoint = 0;
+    if (!strcmp(PROOFMODE, "RedoMissing"))
 	{
         total = 0;
-		for (bit = 0; bit/M <= s; bit += M)
-		{
+        for (curPoint = 0; curPoint <= s; curPoint++)
+        {
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
-			if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || bit + 1 != bits)
-				total = bit + 1;
-            if (bit%L2 == 0)
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
+            if (!fileExists(proofpoint) || !readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, x, NULL) || pointPowers[curPoint] + 1 != bits)
             {
-                if (total != 0)
-                    break;
-                gwcopy(gwdata, x, u0);
-                recovery_bit = bits;
+                total = pointPowers[curPoint] + 1;
+                break;
             }
-		}
+            gwcopy(gwdata, x, u0);
+            recovery_bit = bits;
+        }
 		if (total == 0)
 		{
             strcpy(PROOFMODE, "SavePoints");
@@ -13597,7 +13637,7 @@ restart:
     }
     else if (!strcmp(PROOFMODE, "Compress"))
     {
-        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
+        stopping = compressPoints(pointPowers, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
         *res = FALSE;
@@ -13611,7 +13651,7 @@ restart:
         if (verbose || restarting) {
             writeError(buf);
         }
-        stopping = buildCertificate(total, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        stopping = buildCertificate(total, pointPowers, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
@@ -13664,17 +13704,34 @@ restart:
     }
 	else if (!strcmp(PROOFMODE, "SavePoints"))
 	{
-		for (bit = s*M - s*M%L2; (long)bit >= 0; bit -= L2)
-		{
+        saved_recovery_bit = 0;
+        for (curPoint = s; (long)curPoint >= 0; curPoint--)
+        {
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-			sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
+			sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
 			if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
 			{
-				recovery_bit = bits;
+                recovery_bit = bits;
+                if (curPoint == s)
+                {
+                    saved_recovery_bit = total;
+                    break;
+                }
+				saved_recovery_bit = bits - (bits - 1)%L2;
+                while (recovery_bit > saved_recovery_bit && (long)curPoint >= 0)
+                {
+                    curPoint--;
+                    IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+                    sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
+                    if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+                        recovery_bit = bits;
+                }
+                if (recovery_bit > saved_recovery_bit)
+                    recovery_bit = 0;
 				break;
 			}
 		}
-        saved_recovery_bit = recovery_bit == 0 ? 0 : recovery_bit > s*M ? total : recovery_bit - 1 + M;
+        curPoint++;
     }
 
     timer1 = timers[1];
@@ -13737,6 +13794,7 @@ restart:
 					gwfree(gwdata, x);
 					goto restart;
 				}
+                curPoint = 1;
 			}
 		}
 	}
@@ -13751,6 +13809,9 @@ restart:
 		bit = bits;
 		if (!echkGerbicz)
 			dbltogw(gwdata, 0, d);
+        if (pointPowers != NULL)
+            while (curPoint <= s && pointPowers[curPoint] < bit)
+                curPoint++;
 	}
 	else
 	{
@@ -13850,7 +13911,7 @@ restart:
 
 		gwstartnextfft (gwdata, postfft && !debug && !stopping && !saving && bit != lasterr_point && !((interimFiles && (bit+1) % interimFiles == 0)) &&
 			!(interimResidues && ((bit+1) % interimResidues < 2)) && 
-			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && ((bit - recovery_bit + 1)%L2 != 0) && ((bit%M) != 0));
+			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && ((bit - recovery_bit + 1)%L2 != 0) && (pointPowers == NULL || curPoint > s || pointPowers[curPoint] != bit));
 
 		gwsetnormroutine (gwdata, 0, echk, 0);
 
@@ -13948,12 +14009,12 @@ restart:
 			}
 		}
 
-        if ((bit%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
+        if ((!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && curPoint <= s && bit == pointPowers[curPoint])
         {
             end_timer(1);
             timers[3] = timer_value(1);
             IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
-            sprintf(proofpoint + strlen(proofpoint), ".%lu", bit/M);
+            sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
             if (!writeToFileMD5(gwdata, gdata, proofpoint, fingerprint, bit + 1, x, NULL)) {
                 sprintf(buf, WRITEFILEERR, proofpoint);
                 OutputError(buf);
@@ -13964,11 +14025,12 @@ restart:
                 saved_recovery_bit = recovery_bit;
                 if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
                     IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
+                time(&start_time);
             }
             if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
             {
-                points[bit/M] = gwalloc(gwdata);
-                gwcopy(gwdata, x, points[bit/M]);
+                points[curPoint] = gwalloc(gwdata);
+                gwcopy(gwdata, x, points[curPoint]);
             }
             if (!strcmp(PROOFMODE, "RedoMissing") && bit == total)
             {
@@ -13980,7 +14042,7 @@ restart:
                 goto restart;
             }
             start_timer(1);
-            time(&start_time);
+            curPoint++;
         }
 
 		//if (bit == n-1)
@@ -14122,7 +14184,7 @@ restart:
 
     if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
     {
-        stopping = compressPoints(s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
+        stopping = compressPoints(pointPowers, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
         //retval = (stopping == TRUE);
@@ -14136,6 +14198,8 @@ restart:
     }
 
 	pushg(gdata, 2);
+    if (pointPowers != NULL)
+        free(pointPowers);
     if (points != NULL)
     {
         for (bit = 0; bit <= s; bit++)
@@ -14211,6 +14275,8 @@ restart:
 
 error:
 	pushg(gdata, 2);
+    if (pointPowers != NULL)
+        free(pointPowers);
     if (points != NULL)
     {
         for (bit = 0; bit <= s; bit++)
@@ -14269,6 +14335,8 @@ error:
 
 cleanup:
     pushg(gdata, 2);
+    if (pointPowers != NULL)
+        free(pointPowers);
     if (points != NULL)
     {
         for (bit = 0; bit <= s; bit++)
