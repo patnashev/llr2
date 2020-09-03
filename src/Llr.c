@@ -13559,20 +13559,20 @@ restart:
         pointPowers = malloc((s + 1)*sizeof(long));
         if (IniGetInt(INI_FILE, "Pietrzak", 0))
         {
-            unsigned long *pointTmp = malloc(s*sizeof(long));
-            pointPowers[0] = pointTmp[0] = 0;
-            pointPowers[s] = total;
-            M = total;
-            for (bit = 1; bit < s; bit <<= 1)
+            for (bit = 0; bit < s; bit++)
             {
-                if (M%2 != 0)
-                    for (bits = 0; bits < s; bits++)
-                        pointTmp[bits]++;
-                M /= 2;
-                for (bits = 0; bits < bit; bits++)
-                    pointPowers[s/bit/2 + s/bit*bits] = pointTmp[s/bit/2 + s/bit*bits] = pointTmp[s/bit*bits] + M;
+                M = total;
+                pointPowers[bit] = 0;
+                for (bits = s/2; bits > 0 && (bit & (bits*2 - 1)) != 0; bits >>= 1)
+                {
+                    M /= 2;
+                    if ((bit & bits) != 0)
+                        pointPowers[bit] += M;
+                    if ((total & (s/bits/2)) != 0)
+                        pointPowers[bit]++;
+                }
             }
-            free(pointTmp);
+            pointPowers[s] = total;
         }
         else
         {
