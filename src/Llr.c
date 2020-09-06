@@ -13457,6 +13457,8 @@ PRCONTINUE:
 	echkGerbicz = IniGetInt(INI_FILE, "Gerbicz", 1);
 	if (PROOFMODE[0])
 		echkGerbicz = 1;
+    if (setuponly)
+        echkGerbicz = 0;
 
 	/* Compute the base for the Proth algorithm. */
 
@@ -13539,20 +13541,24 @@ restart:
 
     /* Compute Gerbicz and Atnashev parameters */
 
-    s = IniGetInt(INI_FILE, "ProofCount", 16);
-    bits = total/s/IniGetInt(INI_FILE, "L2PerPoint", 1);
-    iters = bits/IniGetInt(INI_FILE, "PointsPerL2", 1);
-    L = (unsigned long)sqrt(iters);
-    L2 = bits - bits%L;
-    for (bit = L - 1; 2*bit*bit > iters; bit--)
-        if (L2 < bits - bits%bit)
-        {
-            L = bit;
-            L2 = bits - bits%bit;
-        }
-    M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
-    L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
-    L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+    L = L2 = M = 0;
+    if (echkGerbicz)
+    {
+        s = IniGetInt(INI_FILE, "ProofCount", 16);
+        bits = total/s/IniGetInt(INI_FILE, "L2PerPoint", 1);
+        iters = bits/IniGetInt(INI_FILE, "PointsPerL2", 1);
+        L = (unsigned long)sqrt(iters);
+        L2 = bits - bits%L;
+        for (bit = L - 1; 2*bit*bit > iters; bit--)
+            if (L2 < bits - bits%bit)
+            {
+                L = bit;
+                L2 = bits - bits%bit;
+            }
+        M = IniGetInt(INI_FILE, "AtnashevM", L2*IniGetInt(INI_FILE, "L2PerPoint", 1));
+        L = IniGetInt(INI_FILE, "GerbiczL", L2/L);
+        L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
+    }
     pointPowers = NULL;
     if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "BuildCert"))
     {
@@ -13745,7 +13751,7 @@ restart:
     saved_recovery_bit = recovery_bit;
 	bit = recovery_bit;
 
-	if (bit == 0)
+	if (bit == 0 && !setuponly)
 	{
         clear_timers();	// Init. timers
         start_timer(1);
@@ -13899,7 +13905,7 @@ restart:
 /* 30 minute interval expired), and every 128th iteration. */
 
 		stopping = stopCheck ();
-		echk = stopping || ERRCHK || (bit <= 50) || (bit >= n-50) || gwnear_fft_limit (gwdata, pcfftlim) || ((bit - recovery_bit + 1)%L == 0);
+		echk = stopping || ERRCHK || (bit <= 50) || (bit >= n-50) || gwnear_fft_limit (gwdata, pcfftlim) || (echkGerbicz && (bit - recovery_bit + 1)%L == 0) || (pointPowers != NULL && curPoint <= s && pointPowers[curPoint] == bit);
 		if (((bit & 127) == 0) || (bit == 1) || (bit == (lasterr_point-1))) {
 			echk = 1;
 			time (&current_time);
@@ -13911,7 +13917,7 @@ restart:
 
 		gwstartnextfft (gwdata, postfft && !debug && !stopping && !saving && bit != lasterr_point && !((interimFiles && (bit+1) % interimFiles == 0)) &&
 			!(interimResidues && ((bit+1) % interimResidues < 2)) && 
-			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && ((bit - recovery_bit + 1)%L2 != 0) && (pointPowers == NULL || curPoint > s || pointPowers[curPoint] != bit));
+			(bit >= 30) && (bit < n-31) && !maxerr_recovery_mode[6] && (!echkGerbicz || (bit - recovery_bit + 1)%L2 != 0) && (pointPowers == NULL || curPoint > s || pointPowers[curPoint] != bit));
 
 		gwsetnormroutine (gwdata, 0, echk, 0);
 
@@ -14009,7 +14015,7 @@ restart:
 			}
 		}
 
-        if ((!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && curPoint <= s && bit == pointPowers[curPoint])
+        if (pointPowers != NULL && curPoint <= s && bit == pointPowers[curPoint])
         {
             end_timer(1);
             timers[3] = timer_value(1);
@@ -16556,14 +16562,14 @@ int process_num (
 // end Lei mod
 
 		else if ((format == NPGCC1 || format == NPGCC2) && !IniGetInt (INI_FILE, "ForcePRP", 0)) {
-			retval = IsCCP (format, sgk, sgb, gb, n, incr, shift, res);
+			retval = IsCCP (format, sgk, sgb, gb, ninput, incr, shift, res);
 		}
 		else if (!IniGetInt (INI_FILE, "ForcePRP", 0) && (incr == +1 || incr == -1) && (format != ABCVARAQS) && 
 		(format != ABCRU) && (format != ABCGRU))
-			retval = plusminustest (sgk, sgb, gb, n, incr, shift, res);
+			retval = plusminustest (sgk, sgb, gb, ninput, incr, shift, res);
 		else  {
 //			Fermat_only = TRUE;     // JP 30/01/17
-			retval = IsPRP (format, sgk, sgb, gb, n, incr, shift, res);
+			retval = IsPRP (format, sgk, sgb, gb, ninput, incr, shift, res);
 //			Fermat_only = FALSE;    // JP 30/01/17
 		}
 		free (gb);
