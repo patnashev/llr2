@@ -7173,6 +7173,7 @@ int multipointPRP(
 	ghandle *gdata,
 	int a,
 	int* res,
+    gwnum gwres,
 	char* str)
 {
 	unsigned long bit, bits, ops, bit_ops, iters, total;
@@ -7874,7 +7875,11 @@ int multipointPRP(
 
 	clearline(100);
     if (gwtogiantVerbose(gwdata, x, tmp) < 0) goto error;
-    if (!strcmp(PROOFMODE, "VerifyCert"))
+    if (gwres != NULL)
+    {
+        gwcopy(gwdata, x, gwres);
+    }
+    else if (!strcmp(PROOFMODE, "VerifyCert"))
 	{
 		*res = FALSE;
 		if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
@@ -7978,6 +7983,8 @@ int multipointPRP(
 	gwfree(gwdata, x);
 
 	/* Update the output file */
+if (gwres == NULL)
+{
 
 	if ((*res && IniGetInt(INI_FILE, "OutputPrimes", 0)) ||
 		(!*res && IniGetInt(INI_FILE, "OutputComposites", 0)))
@@ -8021,7 +8028,7 @@ int multipointPRP(
 		OutputStr(buf);
 	else
 		OutputBoth(buf);
-
+}
 	/* Cleanup and return */
 
 	_unlink(checkpoint);
@@ -8975,7 +8982,7 @@ restart:
 /* Do the PRP test */
 
 		if (IniGetInt(INI_FILE, "Gerbicz", b == 2 ? 1 : 0) || PROOFMODE[0])
-			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, str);
+			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, NULL, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
 		gwdone (gwdata);
@@ -9444,7 +9451,7 @@ restart:
 /* Do the PRP test */
 
 		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE[0])
-			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, str);
+			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, NULL, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
 		gwdone (gwdata);
@@ -13286,7 +13293,16 @@ int isProthP(
 		gk = newgiant((gksize >> 4)  + 8);	// Allocate space for gk
 		ctog(sgk, gk);						// Convert k string to giant
 	}
-	klen = bitlen(gk);					// Length of initial k multiplier
+    if (shift > 0) {
+        gshiftleft(shift, gk);			// Shift k multiplier if requested
+    }
+    //	gk must be odd for the Proth test, so, adjust gk and n if necessary.
+    while (bitval(gk, 0) == 0) {
+        gshiftright(1, gk);			// update k as a giant
+        n++;							// update the exponent
+    }
+    gtoc(gk, sgk1, sgkbufsize);// Updated k string
+    klen = bitlen(gk);					// Length of initial k multiplier
 	if (klen > 53 || generic) {			// we must use generic reduction
 		dk = 0.0;
 	}
@@ -13296,33 +13312,22 @@ int isProthP(
 			dk += 4294967296.0*(double)gk->n[1];
 	}
 
-	// Lei
-	if (b_else != 1) {					// Compute the big multiplier
-		gk1 = newgiant((gksize>>1) + 8);
-		ultog(b_else, gk1);
-		power(gk1, ninput);
-		mulg(gk1, gk);
-		free(gk1);
-	}
-	// Lei end
-
-	if (shift > 0) {
-		gshiftleft(shift, gk);			// Shift k multiplier if requested
-		dk *= (double)(1<<shift);		// Update dk... J.P. 11/02/11
-		if (b_else != 1)
-			strcpy(sgk1, sgk);			// Lei, J.P.
-		else
-			gtoc(gk, sgk1, sgkbufsize);// Updated k string
-	}
-	else
-		strcpy(sgk1, sgk);
-
-	if ((format != ABCDN) && (format != ABCDNG)) {
+    if ((format != ABCDN) && (format != ABCDNG)) {
 		if (b_else != 1)	// Lei, J.P.
-			sprintf(str, "%s*%lu^%lu%c1", sgk, binput, ninput, '+');// Number N to test, as a string
+			sprintf(str, "%s*%lu^%lu*2^%lu+1", sgk1, b_else, ninput, n);// Number N to test, as a string
 		else
-			sprintf(str, "%s*2^%lu%c1", sgk1, n, '+');	// Number N to test, as a string
+			sprintf(str, "%s*2^%lu+1", sgk1, n);	// Number N to test, as a string
 	}
+
+    // Lei
+    if (b_else != 1) {					// Compute the big multiplier
+        gk1 = newgiant(((gksize-idk)>>4) + 8);
+        gtog(gk, gk1);
+        ultog(b_else, gk);
+        power(gk, ninput);
+        mulg(gk1, gk);
+    }
+    // Lei end
 
 
 	bits = n + bitlen(gk);				// Bit length of N
@@ -13333,13 +13338,6 @@ int isProthP(
 	gshiftleft(n, N);
 	mulg(gk, N);
 	iaddg(1, N);
-
-	//	gk must be odd for the Proth test, so, adjust gk and n if necessary.
-
-	while (bitval(gk, 0) == 0) {
-		gshiftright(1, gk);			// update k as a giant
-		n++;							// update the exponent
-	}
 
 	Nlen = bitlen(N);
 	klen = bitlen(gk);
@@ -13473,6 +13471,11 @@ PRCONTINUE:
 		free(N);
 		return(TRUE);
 	}
+    if (b_else != 1)
+    {
+        gtog(gk1, gk);
+        free(gk1);
+    }
 
 	gwdata = (gwhandle*)malloc(sizeof(gwhandle));
 
@@ -13753,25 +13756,46 @@ restart:
 
 	if (bit == 0 && !setuponly)
 	{
-        clear_timers();	// Init. timers
-        start_timer(1);
-        care = TRUE;
-		dbltogw(gwdata, (double)a, u0);
-		gwsetmulbyconst(gwdata, a);
-		bit = 1;
-		while (bit < klen) {
-			if (bitval(gk, klen - bit - 1)) {
-				gwsetnormroutine(gwdata, 0, 1, 1);
-			}
-			else {
-				gwsetnormroutine(gwdata, 0, 1, 0);
-			}
-			gwsquare_carefully(gwdata, u0);
-			CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
-			bit++;
-		}
-        end_timer(1);
-        timers[3] = timer_value(1);
+        if (b_else != 1)
+        {
+            gbinput = newgiant(2);
+            gbinput->sign = 1;
+            gbinput->n[0] = b_else;
+            sprintf(buf, "%s*%lu^%lu%c1", sgk1, b_else, ninput, '+');
+            retval = multipointPRP(gbinput, ninput, 1, gwdata, gdata, a, res, u0, buf);
+            free(gbinput);
+            if (retval == -1)
+            {
+                restarting = TRUE;
+                goto error;
+            }
+            if (retval == FALSE)
+            {
+                goto cleanup;
+            }
+        }
+        else
+        {
+            clear_timers();	// Init. timers
+            start_timer(1);
+            care = TRUE;
+            dbltogw(gwdata, (double)a, u0);
+            gwsetmulbyconst(gwdata, a);
+            bit = 1;
+            while (bit < klen) {
+                if (bitval(gk, klen - bit - 1)) {
+                    gwsetnormroutine(gwdata, 0, 1, 1);
+                }
+                else {
+                    gwsetnormroutine(gwdata, 0, 1, 0);
+                }
+                gwsquare_carefully(gwdata, u0);
+                CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
+                bit++;
+            }
+            end_timer(1);
+            timers[3] = timer_value(1);
+        }
 
 		recovery_bit = 1;
 		bit = recovery_bit;
