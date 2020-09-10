@@ -528,7 +528,7 @@ void start_timer (
 	if (timers[i+5] != 0.0)			// to avoid double start...
 		return;
 	if (HIGH_RES_TIMER) { 
-		timers[i] -= getHighResTimer (); 
+		timers[i] = timers[i]*getHighResTimerFrequency() - getHighResTimer();
 	} /* else if (CPU_FLAGS & CPU_RDTSC) {		// 16/06/12 CPU_SPEED no more used...
 		uint32_t hi, lo;
 		rdtsc (&hi, &lo);
@@ -549,7 +549,7 @@ void end_timer (
 	if (timers[i+5] == 0.0)			// to avoid double end...
 		return;
 	if (HIGH_RES_TIMER) { 
-		timers[i] += getHighResTimer (); 
+		timers[i] = (timers[i] + getHighResTimer())/getHighResTimerFrequency();
 	} /* else if (CPU_FLAGS & CPU_RDTSC) {		// 16/06/12 CPU_SPEED no more used...
 		uint32_t hi, lo;
 		rdtsc (&hi, &lo);
@@ -573,7 +573,7 @@ double timer_value (
 	int	i) 
 { 
 	if (HIGH_RES_TIMER) 
-		return (timers[i] / getHighResTimerFrequency ()); 
+		return timers[i];
 //	else if (CPU_FLAGS & CPU_RDTSC)
 //		return (timers[i] / CPU_SPEED / 1000000.0);		// 16/06/12 CPU_SPEED no more used...
 	else 
@@ -6853,6 +6853,9 @@ int checkRootsPlus(giant gb, unsigned long iters, gwhandle *gwdata, gwnum u0, gw
     end_timer(1);
     timer1 = timers[1];
 
+    care = TRUE;
+    gwsetnormroutine(gwdata, 0, 1, 0);
+
     gwcopy(gwdata, x, u0);
     bit = 1;
     while (bit < klen) {
@@ -7104,6 +7107,9 @@ int checkRootsMinus(giant gb, unsigned long n, long c, gwhandle *gwdata, gwnum u
 
     free(bitmap);
     free(primes);
+
+    care = TRUE;
+    gwsetnormroutine(gwdata, 0, 1, 0);
 
     len = bitlen(tmp);
     gwcopy(gwdata, x, u0);
@@ -7484,12 +7490,6 @@ int multipointPRP(
 			writeError(buf);
 	}
 
-	/* Get the current time */
-
-	start_timer(0);
-	start_timer(1);
-	time(&start_time);
-
 	/* Output a message about the FFT length */
 
     if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing"))
@@ -7506,7 +7506,14 @@ int multipointPRP(
 /* Init the title */
 	title("Fermat PRP test in progress...");
 
-	/* Do the PRP test */
+    /* Get the current time */
+
+    clear_timer(0);
+    start_timer(0);
+    start_timer(1);
+    time(&start_time);
+
+    /* Do the PRP test */
 
 	iters = 0;
 	while (bit <= total) {
@@ -13314,7 +13321,7 @@ int isProthP(
 
     if ((format != ABCDN) && (format != ABCDNG)) {
 		if (b_else != 1)	// Lei, J.P.
-			sprintf(str, "%s*%lu^%lu*2^%lu+1", sgk1, b_else, ninput, n);// Number N to test, as a string
+			sprintf(str, "%s*%lu^%lu+1 = %s*%lu^%lu*2^%lu+1", sgk, binput, ninput, sgk1, b_else, ninput, n);// Number N to test, as a string
 		else
 			sprintf(str, "%s*2^%lu+1", sgk1, n);	// Number N to test, as a string
 	}
@@ -13758,12 +13765,14 @@ restart:
 	{
         if (b_else != 1)
         {
+            iaddg(1, N); // To make filenames different
             gbinput = newgiant(2);
             gbinput->sign = 1;
             gbinput->n[0] = b_else;
-            sprintf(buf, "%s*%lu^%lu%c1", sgk1, b_else, ninput, '+');
+            sprintf(buf, "a^(%s*%lu^%lu)", sgk1, b_else, ninput);
             retval = multipointPRP(gbinput, ninput, 1, gwdata, gdata, a, res, u0, buf);
             free(gbinput);
+            iaddg(-1, N);
             if (retval == -1)
             {
                 restarting = TRUE;
@@ -13886,10 +13895,6 @@ restart:
 		}
 	}
 
-	start_timer (0);	// Start loop timer.
-	start_timer (1);	// Start global timer
-	time (&start_time);	// Start intermediate file saving time
-
 /* Output a message about the FFT length and the Proth base. */
 
     if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing"))
@@ -13916,6 +13921,13 @@ restart:
 		writeError(buf);
 	}
 	ReplaceableLine (1);	/* Remember where replaceable line is */
+
+/* Get the current time */
+
+    clear_timer(0);
+    start_timer(0);	// Start loop timer.
+    start_timer(1);	// Start global timer
+    time(&start_time);	// Start intermediate file saving time
 
 /* Do the Proth test */
 
@@ -18241,51 +18253,20 @@ void resetGlobals()
     IniWriteString(INI_FILE, "CachePoints", NULL);
 }
 
-int isPRP(
-	char* sgk,
-	char* sgb,
-	unsigned long n,		/* n in k*b^n+c */
-	signed long c,			/* c in k*b^n+c */
-	int	*res)
+int IsPRPinit(
+    unsigned long format,
+    char *sgk,
+    char *sgb,
+    unsigned long n,
+    int incr,
+    unsigned long shift,
+    int	*res)
 {
 	int	retval;
-    unsigned long bits, smallbase = 0;
-	double dk;
-	char str[sgkbufsize+256];
 
-	sprintf(str, "%s*%s^%lu%c%d", sgk, sgb, n, c < 0 ? '-' : '+', abs(c));
-
-	gk = newgiant(strlen(sgk) / 2 + 8);	// Allocate one byte per decimal digit + spares
-	ctog(sgk, gk);						// Convert b string to giant
-    klen = bitlen(gk);
-
-	giant gb = newgiant(strlen(sgb) / 2 + 8);	// Allocate one byte per decimal digit + spares
-	ctog(sgb, gb);						// Convert b string to giant
-    if (abs(gb->sign) == 1)					// Test if the base is a small integer
-        smallbase = gb->n[0];
-
-    if (smallbase)
-        bits = (unsigned long)((n * log((double)smallbase)) / log(2.0) + bitlen(gk));
-    else
-        bits = n * bitlen(gb) + bitlen(gk);
-	N = newgiant((bits >> 4) + 8);		// Allocate memory for N
-
-	gtog(gb, N);
-	power(N, n);
-	mulg(gk, N);
-	iaddg(c, N);
-    Nlen = bitlen(N);
-
-	if (klen > 53 || generic || !smallbase) {			// we must use generic reduction
-		dk = 0.0;
-	}
-	else {								// we can use DWT, compute k as a double
-		dk = (double)gk->n[0];
-		if (gk->sign > 1)
-			dk += 4294967296.0*(double)gk->n[1];
-	}
-
-	retval = isPRPinternal(str, dk, gb, n, c, res);
+    giant gb = newgiant(strlen(sgb) / 2 + 8);	// Allocate one byte per decimal digit + spares
+    ctog(sgb, gb);						// Convert b string to giant
+    retval = IsPRP(format, sgk, sgb, gb, n, incr, shift, res);
 
 	free(gb);
 	return retval;
