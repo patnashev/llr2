@@ -4,7 +4,7 @@ CC = gcc
 
 # See README.md for how to get macOS SDK
 LFLAGS = -isysroot MacOSX10.7.sdk -mmacosx-version-min=10.7
-LIBELF = ../gwnum/amd64/release/gwnum.a
+LIBELF = ../gwnum/mac64/gwnum.a
 LIBS2  = $(LIBELF) -lm -lpthread
 
 COMPOBJS = lprime.o
