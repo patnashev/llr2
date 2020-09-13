@@ -2,8 +2,8 @@
 
 CC = gcc
 
-LFLAGS =
-LIBELF = ../gwnum/mac64/gwnum.a
+LFLAGS = -isysroot MacOSX10.7.sdk -mmacosx-version-min=10.7
+LIBELF = ../gwnum/amd64/release/gwnum.a
 LIBS2  = $(LIBELF) -lm -lpthread
 
 COMPOBJS = lprime.o
