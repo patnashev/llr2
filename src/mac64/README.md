@@ -4,4 +4,4 @@
 - Mount the downloaded DMG file and go to Xcode.app (no need to install) 
 - Right click, "Show Package Content" 
 - Go to `/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs` 
-- Copy `MacOSX10.6.sdk` to the directory this README file is located
+- Copy `MacOSX10.7.sdk` to the directory this README file is located
