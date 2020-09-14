@@ -13725,7 +13725,7 @@ restart:
         {
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
-			if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+			if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL) && pointPowers[curPoint] + 1 == bits)
 			{
                 recovery_bit = bits;
                 if (curPoint == s)
@@ -13733,17 +13733,21 @@ restart:
                     saved_recovery_bit = total;
                     break;
                 }
-				saved_recovery_bit = bits - (bits - 1)%L2;
-                while (recovery_bit > saved_recovery_bit && (long)curPoint >= 0)
+                saved_recovery_bit = pointPowers[curPoint + 1];
+                bit = bits - (bits - 1)%L2;
+                while (recovery_bit > bit)
                 {
                     curPoint--;
+                    if ((long)curPoint < 0)
+                    {
+                        recovery_bit = 0;
+                        break;
+                    }
                     IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
                     sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
-                    if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL))
+                    if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL) && pointPowers[curPoint] + 1 == bits)
                         recovery_bit = bits;
                 }
-                if (recovery_bit > saved_recovery_bit)
-                    recovery_bit = 0;
 				break;
 			}
 		}
