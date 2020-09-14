@@ -6400,7 +6400,7 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
     gwsetnormroutine(gwdata, 0, 1, 0);
     gwcopy(gwdata, d, u0);
 
-    if (!IniGetInt(INI_FILE, "Pietrzak", 0))
+    if (!IniGetInt(INI_FILE, "Pietrzak", 1))
     {
         tmp->sign = 0;
         while (isZero(tmp))
@@ -6813,7 +6813,7 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
             strcat(proofpoint, ".md5");
             _unlink(proofpoint);
         }
-        if (IniGetInt(INI_FILE, "Pietrzak", 0))
+        if (IniGetInt(INI_FILE, "Pietrzak", 1))
             for (i = 0; i < t; i++)
             {
                 IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
@@ -7939,7 +7939,7 @@ int multipointPRP(
 			sprintf(buf, "%s is base %lu-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
 		}
 
-        if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
+        if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 1))
         {
             stopping = compressPoints(NULL, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
             if (stopping == FALSE)
@@ -13573,7 +13573,7 @@ restart:
     if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "BuildCert"))
     {
         pointPowers = malloc((s + 1)*sizeof(long));
-        if (IniGetInt(INI_FILE, "Pietrzak", 0))
+        if (IniGetInt(INI_FILE, "Pietrzak", 1))
         {
             for (bit = 0; bit < s; bit++)
             {
@@ -14228,7 +14228,7 @@ restart:
 			sprintf (res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
 	}
 
-    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 0))
+    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 1))
     {
         stopping = compressPoints(pointPowers, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
