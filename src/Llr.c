@@ -7543,6 +7543,9 @@ int multipointPRP(
             if (care && !addErrorPoint(ops)) goto error;
             ops++;
 
+            if (maxerr_recovery_mode[6])
+                gwcopy(gwdata, x, check_d);
+            gwfft(gwdata, x, x);
             // x^3, x^5, ..., x^(2^K - 1)
             for (i = 1; i < (1 << (K - 1)); i++)
             {
@@ -7554,104 +7557,101 @@ int multipointPRP(
                 gwsetnormroutine(gwdata, 0, echk, 0);
                 gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
                 if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
-                    gwsafemul(gwdata, x, u[i]);
+                    gwfftmul(gwdata, x, u[i]);
                     care = FALSE;
                 }
                 else {
-                    gwmul_carefully(gwdata, x, u[i]);
+                    gwmul_carefully(gwdata, check_d, u[i]);
                     care = TRUE;
                 }
                 CHECK_IF_ANY_ERROR(u[i], (ops), bit, 6);
                 if (care && !addErrorPoint(ops)) goto error;
                 ops++;
             }
-        }
 
-		// x^(b^L)
-		i = explen - 1;
-		while (i >= 0)
-		{
-			if (bitval(gexp, i) == 0)
-			{
-				// x = x*x
-				echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
-				gwsetnormroutine(gwdata, 0, echk, 0);
-				gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
+            gwcopy(gwdata, u[0], x);
+            if (!maxerr_recovery_mode[6])
+                for (i = 1; i < (1 << (K - 1)); i++)
+                    gwfft(gwdata, u[i], u[i]);
+        }
+        if (!maxerr_recovery_mode[6])
+            gwfft(gwdata, u[0], u[0]);
+
+        // x^(b^L)
+        i = explen - 2;
+        while (i >= 0)
+        {
+            if (bitval(gexp, i) == 0)
+            {
+                // x = x*x
+                echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
+                gwsetnormroutine(gwdata, 0, echk, 0);
+                gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
                 if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
-					gwsquare(gwdata, x);
-					care = FALSE;
-				}
-				else {
-					gwsquare_carefully(gwdata, x);
-					care = TRUE;
+                    gwsquare(gwdata, x);
+                    care = FALSE;
                 }
-				CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+                else {
+                    gwsquare_carefully(gwdata, x);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
                 if (care && !addErrorPoint(ops)) goto error;
                 ops++;
 
-				i--;
-			}
-			else
-			{
-				j = i - K + 1;
-				if (j < 0)
-					j = 0;
-				for (; bitval(gexp, j) == 0; j++);
+                i--;
+            }
+            else
+            {
+                j = i - K + 1;
+                if (j < 0)
+                    j = 0;
+                for (; bitval(gexp, j) == 0; j++);
                 int ui = 0;
-                if (i == explen - 1)
+                while (i >= j)
                 {
-                    while (i >= j)
-                    {
-                        ui <<= 1;
-                        ui += bitval(gexp, i) ? 1 : 0;
-                        i--;
-                    }
-                    // x = u[ui/2]
-                    gwcopy(gwdata, u[ui/2], x);
-                    continue;
-                }
-
-				while (i >= j)
-				{
-					// x = x*x
-					echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
-					gwsetnormroutine(gwdata, 0, echk, 0);
-					gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
+                    // x = x*x
+                    echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0);
+                    gwsetnormroutine(gwdata, 0, echk, 0);
+                    gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6]);
                     if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
-						gwsquare(gwdata, x);
-						care = FALSE;
-					}
-					else {
-						gwsquare_carefully(gwdata, x);
-						care = TRUE;
+                        gwsquare(gwdata, x);
+                        care = FALSE;
                     }
-					CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+                    else {
+                        gwsquare_carefully(gwdata, x);
+                        care = TRUE;
+                    }
+                    CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
                     if (care && !addErrorPoint(ops)) goto error;
                     ops++;
 
-					ui <<= 1;
-					ui += bitval(gexp, i) ? 1 : 0;
-					i--;
-				}
-
-				// x = x*u[ui/2]
-				echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
-				gwsetnormroutine(gwdata, 0, echk, 0);
-				gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
-                if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
-					gwsafemul(gwdata, u[ui/2], x);
-					care = FALSE;
-				}
-				else {
-					gwmul_carefully(gwdata, u[ui/2], x);
-					care = TRUE;
+                    ui <<= 1;
+                    ui += bitval(gexp, i) ? 1 : 0;
+                    i--;
                 }
-				CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
+
+                // x = x*u[ui/2]
+                echk = ERRCHK || gwnear_fft_limit(gwdata, pcfftlim) || (ops == lasterr_point) || ((ops & 127) == 0) || i == 0;
+                gwsetnormroutine(gwdata, 0, echk, 0);
+                gwstartnextfft(gwdata, postfft && !debug && ops != lasterr_point && !maxerr_recovery_mode[6] && i > 0);
+                if (((ops != lasterr_point) || !maxerr_recovery_mode[6]) && !(cur_error_point < total_error_points && error_points[cur_error_point] == ops)) {
+                    if (!maxerr_recovery_mode[6])
+                        gwfftmul(gwdata, u[ui/2], x);
+                    else
+                        gwsafemul(gwdata, u[ui/2], x);
+                    care = FALSE;
+                }
+                else {
+                    gwmul_carefully(gwdata, u[ui/2], x);
+                    care = TRUE;
+                }
+                CHECK_IF_ANY_ERROR(x, (ops), bit, 6);
                 if (care && !addErrorPoint(ops)) goto error;
                 ops++;
-			}
-		}
-		bit += L;
+            }
+        }
+        bit += L;
 
 		gwstartnextfft(gwdata, 0);
 		care = TRUE;
@@ -7915,10 +7915,11 @@ int multipointPRP(
             if (tmp->sign == 0)
                 sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)0);
             else if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
-				sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
-			else
-				sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
-            if (c < 1)
+                sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)tmp->n[0]);
+            else
+                sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
+            sprintf(buf, "%s is not prime.  RES64: %s", str, res64);
+            if (c < 1 && tmp2->sign > 0)
             {
                 for (i = 1 - c; i > 0; i--)
                     ulmulg(a, tmp);
@@ -7933,7 +7934,8 @@ int multipointPRP(
                     goto error;
                 }
             }
-			sprintf(buf, "%s is not prime.  RES64: %s", str, res64);
+            if (c < 1 && tmp2->sign <= 0)
+                sprintf(buf, "%s is divisible by a.", str);
 		}
 		else {
 			sprintf(buf, "%s is base %lu-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
