@@ -7568,17 +7568,10 @@ int multipointPRP(
                 if (care && !addErrorPoint(ops)) goto error;
                 ops++;
             }
-
-            gwcopy(gwdata, u[0], x);
-            if (!maxerr_recovery_mode[6])
-                for (i = 1; i < (1 << (K - 1)); i++)
-                    gwfft(gwdata, u[i], u[i]);
         }
-        if (!maxerr_recovery_mode[6])
-            gwfft(gwdata, u[0], u[0]);
 
         // x^(b^L)
-        i = explen - 2;
+        i = explen - 1;
         while (i >= 0)
         {
             if (bitval(gexp, i) == 0)
@@ -7608,6 +7601,22 @@ int multipointPRP(
                     j = 0;
                 for (; bitval(gexp, j) == 0; j++);
                 int ui = 0;
+                if (i == explen - 1)
+                {
+                    while (i >= j)
+                    {
+                        ui <<= 1;
+                        ui += bitval(gexp, i) ? 1 : 0;
+                        i--;
+                    }
+                    // x = u[ui/2]
+                    gwcopy(gwdata, u[ui/2], x);
+                    if (!maxerr_recovery_mode[6])
+                        for (j = 0; j < (1 << (K - 1)); j++)
+                            gwfft(gwdata, u[j], u[j]);
+                    continue;
+                }
+
                 while (i >= j)
                 {
                     // x = x*x
