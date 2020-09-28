@@ -205,4 +205,17 @@ void title (char *);
 void flashWindowAndBeep ();
 void SetPriority ();
 
+/* Proof modes */
+
+enum ProofModeEnum
+{
+    NoProof = 0,
+    SavePoints,
+    RedoMissing,
+    CompressPoints,
+    BuildCert,
+    VerifyCert,
+    VerifyRes
+};
+
 #endif

@@ -351,10 +351,26 @@ int main (
 		case 'p':
             while (isspace(*p))
                 p++;
-            p2 = PROOFMODE;
+            p2 = buf;
             while (*p && !isspace(*p))
                 *p2++ = *p++;
             *p2 = '\0';
+            if (strcmp(buf, "NoProof") == 0)
+                PROOFMODE = NoProof;
+            else if (strcmp(buf, "SavePoints") == 0)
+                PROOFMODE = SavePoints;
+            else if (strcmp(buf, "RedoMissing") == 0)
+                PROOFMODE = RedoMissing;
+            else if (strcmp(buf, "CompressPoints") == 0)
+                PROOFMODE = CompressPoints;
+            else if (strcmp(buf, "BuildCert") == 0)
+                PROOFMODE = BuildCert;
+            else if (strcmp(buf, "VerifyCert") == 0)
+                PROOFMODE = VerifyCert;
+            else if (strcmp(buf, "VerifyRes") == 0)
+                PROOFMODE = VerifyRes;
+            else
+                goto errexpr;
             break;
 
 

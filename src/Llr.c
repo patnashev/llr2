@@ -218,7 +218,7 @@ char	SVINI_FILE[80] = {0};
 char	RESFILE[80] = {0};
 char	LOGFILE[80] = {0};
 char	EXTENSION[8] = {0};;
-char	PROOFMODE[80] = {0};
+enum ProofModeEnum PROOFMODE = NoProof;
 int volatile ERRCHK = 0;
 unsigned int PRIORITY = 1;
 unsigned int CPU_AFFINITY = 99;
@@ -7258,7 +7258,7 @@ int multipointPRP(
 		u[i] = gwalloc(gwdata);
 
     points = NULL;
-    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+    if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "CachePoints", 0))
     {
         points = (gwnum*)malloc(sizeof(gwnum)*(s + 1));
         for (bit = 0; bit <= s; bit++)
@@ -7271,7 +7271,7 @@ int multipointPRP(
 	recovery_bit = 0;
     saved_recovery_bit = total;
     ops = 0;
-	if (!strcmp(PROOFMODE, "RedoMissing"))
+	if (PROOFMODE == RedoMissing)
 	{
         total = 0;
 		for (bit = 0; bit/M <= s; bit += M)
@@ -7290,14 +7290,14 @@ int multipointPRP(
 		}
 		if (total == 0)
 		{
-            strcpy(PROOFMODE, "SavePoints");
+            PROOFMODE = SavePoints;
             retval = (-1);
             goto cleanup;
         }
         total--;
         saved_recovery_bit = total;
     }
-    else if (!strcmp(PROOFMODE, "Compress"))
+    else if (PROOFMODE == CompressPoints)
     {
         stopping = compressPoints(NULL, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
@@ -7306,7 +7306,7 @@ int multipointPRP(
         retval = (stopping == TRUE);
         goto cleanup;
     }
-    else if (!strcmp(PROOFMODE, "BuildCert"))
+    else if (PROOFMODE == BuildCert)
 	{
         sprintf(buf, "Building certificate...\nUsing %s\n", fft_desc);
         OutputStr(buf);
@@ -7322,12 +7322,12 @@ int multipointPRP(
 			retval = (stopping == TRUE);
             goto cleanup;
         }
-        strcpy(PROOFMODE, "VerifyRes");
+        PROOFMODE = VerifyRes;
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
         CUMULATIVE_TIMING = 1;
     }
-	else if (!strcmp(PROOFMODE, "VerifyCert"))
+	else if (PROOFMODE == VerifyCert)
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".crt");
@@ -7346,7 +7346,7 @@ int multipointPRP(
 		checkpoint[0] = 'v';
         recoverypoint[0] = 'w';
     }
-	else if (!strcmp(PROOFMODE, "VerifyRes"))
+	else if (PROOFMODE == VerifyRes)
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
@@ -7364,7 +7364,7 @@ int multipointPRP(
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
     }
-	else if (!strcmp(PROOFMODE, "SavePoints"))
+	else if (PROOFMODE == SavePoints)
 	{
 		for (bit = s*M - s*M%L2; (long)bit >= 0; bit -= L2)
 		{
@@ -7418,11 +7418,11 @@ int multipointPRP(
 		bit = recovery_bit;
 		saved_recovery_bit = recovery_bit;
 		timers[4] = ops;
-		if (!PROOFMODE[0] && !writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
+		if (PROOFMODE == NoProof && !writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, recovery_bit, u0, NULL)) {
 			sprintf(buf, WRITEFILEERR, recoverypoint);
 			OutputBoth(buf);
 		}
-		if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "Save0"))
+		if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing)
 		{
 			IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 			sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
@@ -7431,7 +7431,7 @@ int multipointPRP(
 				OutputError(buf);
 				goto error;
 			}
-			if (!strcmp(PROOFMODE, "RedoMissing"))
+			if (PROOFMODE == RedoMissing)
 			{
                 retval = (-1);
                 goto cleanup;
@@ -7492,7 +7492,7 @@ int multipointPRP(
 
 	/* Output a message about the FFT length */
 
-    if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing"))
+    if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing)
         sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
     else
         sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
@@ -7756,7 +7756,7 @@ int multipointPRP(
 			ops++;
 		}
 
-        if (((bit - 1)%M) == 0 && (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing")) && (bit/M <= s))
+        if (((bit - 1)%M) == 0 && (PROOFMODE == SavePoints || PROOFMODE == RedoMissing) && (bit/M <= s))
         {
             end_timer(1);
             timers[3] = timer_value(1);
@@ -7774,12 +7774,12 @@ int multipointPRP(
                 if (IniGetInt(INI_FILE, "Gerbicz_Error_Count", 0) != 0)
                     IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
             }
-            if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+            if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "CachePoints", 0))
             {
                 points[bit/M] = gwalloc(gwdata);
                 gwcopy(gwdata, x, points[bit/M]);
             }
-            if (!strcmp(PROOFMODE, "RedoMissing") && bit - 1 == total)
+            if (PROOFMODE == RedoMissing && bit - 1 == total)
             {
                 retval = (-1);
                 goto cleanup;
@@ -7895,7 +7895,7 @@ int multipointPRP(
     {
         gwcopy(gwdata, x, gwres);
     }
-    else if (!strcmp(PROOFMODE, "VerifyCert"))
+    else if (PROOFMODE == VerifyCert)
 	{
 		*res = FALSE;
 		if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
@@ -7950,7 +7950,7 @@ int multipointPRP(
 			sprintf(buf, "%s is base %lu-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
 		}
 
-        if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 1))
+        if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "Pietrzak", 1))
         {
             stopping = compressPoints(NULL, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
             if (stopping == FALSE)
@@ -7962,7 +7962,7 @@ int multipointPRP(
             }
         }
 
-        if (!*res && !strcmp(PROOFMODE, "VerifyRes") && IniGetInt(INI_FILE, "CheckRoots", 0))
+        if (!*res && PROOFMODE == VerifyRes && IniGetInt(INI_FILE, "CheckRoots", 0))
         {
             if (c == 1 && !checkRootsPlus(gb, iters*L/explen, gwdata, u0, x, tmp))
             {
@@ -8999,7 +8999,7 @@ restart:
 
 /* Do the PRP test */
 
-		if (IniGetInt(INI_FILE, "Gerbicz", b == 2 ? 1 : 0) || PROOFMODE[0])
+		if (IniGetInt(INI_FILE, "Gerbicz", b == 2 ? 1 : 0) || PROOFMODE != NoProof)
 			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, NULL, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
@@ -9468,7 +9468,7 @@ restart:
 
 /* Do the PRP test */
 
-		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE[0])
+		if (IniGetInt(INI_FILE, "Gerbicz", 0) || PROOFMODE != NoProof)
 			retval = multipointPRP(gb, n, c, gwdata, gdata, a, res, NULL, str);
 		else
 			retval = commonPRP(gwdata, gdata, a, res, str);
@@ -9636,7 +9636,7 @@ int isPRPinternal (
 	fcontinue = fcontinue || fileExists (filename);
 
 
-	if (dk >= 1.0){// && (smallbase == 2 || strcmp(PROOFMODE, "BuildCert"))) {
+	if (dk >= 1.0){// && (smallbase == 2 || PROOFMODE != BuildCert)) {
 		if ((fcontinue || IniGetInt(INI_FILE, "LucasPRPtest", 0)) && !IniGetInt(INI_FILE, "Gerbicz", 0)) {
 			if (!fcontinue)
 				clear_timers ();				// Init. timers
@@ -13471,7 +13471,7 @@ PRCONTINUE:
 	title("Proth prime test in progress...");
 
 	echkGerbicz = IniGetInt(INI_FILE, "Gerbicz", 1);
-	if (PROOFMODE[0])
+	if (PROOFMODE != NoProof)
 		echkGerbicz = 1;
     if (setuponly)
         echkGerbicz = 0;
@@ -13581,7 +13581,7 @@ restart:
         L2 = IniGetInt(INI_FILE, "GerbiczL2", L2*IniGetInt(INI_FILE, "PointsPerL2", 1));
     }
     pointPowers = NULL;
-    if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "BuildCert"))
+    if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing || PROOFMODE == BuildCert)
     {
         pointPowers = malloc((s + 1)*sizeof(long));
         if (IniGetInt(INI_FILE, "Pietrzak", 1))
@@ -13621,7 +13621,7 @@ restart:
 	u0 = gwalloc(gwdata);
 
     points = NULL;
-    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+    if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "CachePoints", 0))
     {
         points = (gwnum*)malloc(sizeof(gwnum)*(s + 1));
         for (bit = 0; bit <= s; bit++)
@@ -13634,7 +13634,7 @@ restart:
     recovery_bit = 0;
     saved_recovery_bit = total;
     curPoint = 0;
-    if (!strcmp(PROOFMODE, "RedoMissing"))
+    if (PROOFMODE == RedoMissing)
 	{
         total = 0;
         for (curPoint = 0; curPoint <= s; curPoint++)
@@ -13651,7 +13651,7 @@ restart:
         }
 		if (total == 0)
 		{
-            strcpy(PROOFMODE, "SavePoints");
+            PROOFMODE = SavePoints;
             pushg(gdata, 2);
             gwfree(gwdata, u0);
             gwfree(gwdata, check_d);
@@ -13662,7 +13662,7 @@ restart:
         total--;
         saved_recovery_bit = total;
     }
-    else if (!strcmp(PROOFMODE, "Compress"))
+    else if (PROOFMODE == CompressPoints)
     {
         stopping = compressPoints(pointPowers, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
@@ -13671,7 +13671,7 @@ restart:
         retval = (stopping == TRUE);
         goto cleanup;
     }
-    else if (!strcmp(PROOFMODE, "BuildCert"))
+    else if (PROOFMODE == BuildCert)
 	{
         sprintf(buf, "Building certificate...\nUsing %s\n", fft_desc);
         OutputStr(buf);
@@ -13687,12 +13687,12 @@ restart:
             retval = (stopping == TRUE);
             goto cleanup;
 		}
-        strcpy(PROOFMODE, "VerifyRes");
+        PROOFMODE = VerifyRes;
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
         CUMULATIVE_TIMING = 1;
     }
-	else if (!strcmp(PROOFMODE, "VerifyCert"))
+	else if (PROOFMODE == VerifyCert)
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".crt");
@@ -13711,7 +13711,7 @@ restart:
 		checkpoint[0] = 'v';
         recoverypoint[0] = 'w';
     }
-	else if (!strcmp(PROOFMODE, "VerifyRes"))
+	else if (PROOFMODE == VerifyRes)
 	{
 		IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 		sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
@@ -13729,7 +13729,7 @@ restart:
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
     }
-	else if (!strcmp(PROOFMODE, "SavePoints"))
+	else if (PROOFMODE == SavePoints)
 	{
         saved_recovery_bit = 0;
         for (curPoint = s; (long)curPoint >= 0; curPoint--)
@@ -13826,11 +13826,11 @@ restart:
 		saved_recovery_bit = recovery_bit;
 		if (echkGerbicz)
 		{
-			if (!PROOFMODE[0] && !writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, 1, u0, NULL)) {
+			if (PROOFMODE == NoProof && !writeToFileMD5(gwdata, gdata, recoverypoint, fingerprint, 1, u0, NULL)) {
 				sprintf(buf, WRITEFILEERR, recoverypoint);
 				OutputBoth(buf);
 			}
-			if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing") || !strcmp(PROOFMODE, "Save0"))
+			if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing)
 			{
 				IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
 				sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
@@ -13839,7 +13839,7 @@ restart:
 					OutputError(buf);
 					goto error;
 				}
-				if (!strcmp(PROOFMODE, "RedoMissing"))
+				if (PROOFMODE == RedoMissing)
 				{
 					pushg(gdata, 2);
 					gwfree(gwdata, u0);
@@ -13912,7 +13912,7 @@ restart:
 
 /* Output a message about the FFT length and the Proth base. */
 
-    if (!strcmp(PROOFMODE, "SavePoints") || !strcmp(PROOFMODE, "RedoMissing"))
+    if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing)
         sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
     else if (echkGerbicz)
 		sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
@@ -14084,12 +14084,12 @@ restart:
                     IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
                 time(&start_time);
             }
-            if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "CachePoints", 0))
+            if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "CachePoints", 0))
             {
                 points[curPoint] = gwalloc(gwdata);
                 gwcopy(gwdata, x, points[curPoint]);
             }
-            if (!strcmp(PROOFMODE, "RedoMissing") && bit == total)
+            if (PROOFMODE == RedoMissing && bit == total)
             {
                 pushg(gdata, 2);
                 gwfree(gwdata, u0);
@@ -14226,10 +14226,10 @@ restart:
 	clearline (100);
     
 	if (gwtogiantVerbose(gwdata, x, tmp) < 0) goto error;		// The modulo reduction is done here
-	if (strcmp(PROOFMODE, "VerifyCert"))
+	if (PROOFMODE != VerifyCert)
 		iaddg (1, tmp);					// Compute the (unnormalized) residue
 
-	if (gcompg (N, tmp) != 0 || !strcmp(PROOFMODE, "VerifyCert")) {
+	if (gcompg (N, tmp) != 0 || PROOFMODE == VerifyCert) {
 		*res = FALSE;				/* Not a prime */
         if (tmp->sign == 0)
             sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)0);
@@ -14239,7 +14239,7 @@ restart:
 			sprintf (res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
 	}
 
-    if (!strcmp(PROOFMODE, "SavePoints") && IniGetInt(INI_FILE, "Pietrzak", 1))
+    if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "Pietrzak", 1))
     {
         stopping = compressPoints(pointPowers, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
@@ -14248,7 +14248,7 @@ restart:
         //goto cleanup;
     }
 
-    if (!*res && !strcmp(PROOFMODE, "VerifyRes") && IniGetInt(INI_FILE, "CheckRoots", 0) && !checkRootsPlus(NULL, iters, gwdata, u0, x, tmp))
+    if (!*res && PROOFMODE == VerifyRes && IniGetInt(INI_FILE, "CheckRoots", 0) && !checkRootsPlus(NULL, iters, gwdata, u0, x, tmp))
     {
         retval = FALSE;
         goto cleanup;
@@ -14275,7 +14275,7 @@ restart:
 /* Print results.  Do not change the format of this line as Jim Fougeron of */
 /* PFGW fame automates his QA scripts by parsing this line. */
 
-	if (!strcmp(PROOFMODE, "VerifyCert"))
+	if (PROOFMODE == VerifyCert)
 		sprintf(buf, "Certificate RES64: %s", res64);
 	else if (*res)
 		sprintf (buf, "%s is prime! (%lu decimal digits)", str, nbdg); 
@@ -18252,7 +18252,7 @@ void resetGlobals()
 
 	res64[0] = 0;
     cert64[0] = 0;
-	PROOFMODE[0] = 0;
+	PROOFMODE = NoProof;
 
     IniWriteString(INI_FILE, "FFT_Increment", NULL);
     IniWriteString(INI_FILE, "SlidingWindow", NULL);
