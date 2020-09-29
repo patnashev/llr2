@@ -5944,12 +5944,17 @@ error:
 	return (-1);
 }
 
-gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, unsigned long i, unsigned long bit, gwnum *points, gwnum r)
+int readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t fingerprint, gwhandle *gwdata, ghandle *gdata, unsigned long i, unsigned long bit, gwnum *points, gwnum r)
 {
     unsigned long bits;
 
     if (points != NULL && points[i] != NULL)
-        return points[i];
+    {
+        gwcopy(gwdata, points[i], r);
+        gwfree(gwdata, points[i]);
+        points[i] = NULL;
+        return TRUE;
+    }
 
     IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
     sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
@@ -5957,9 +5962,9 @@ gwnum readPoint(char *buf, char *recoverypoint, char *proofpoint, uint32_t finge
     {
         sprintf(buf, "%s is missing or corrupt.\n", proofpoint);
         OutputError(buf);
-        return NULL;
+        return FALSE;
     }
-    return r;
+    return TRUE;
 }
 
 void hash_giant(giant gin, giant gout)
@@ -6070,13 +6075,11 @@ int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M,
         return -1;
     }
 
-    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s, pointPowers != NULL ? pointPowers[s] : s*M, points, u0)) == NULL)
+    if (!readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s, pointPowers != NULL ? pointPowers[s] : s*M, points, x))
         return -1;
-    gwcopy(gwdata, r, x);
 
-    if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s/2, pointPowers != NULL ? pointPowers[s/2] : s/2*M, points, u0)) == NULL)
+    if (!readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, s/2, pointPowers != NULL ? pointPowers[s/2] : s/2*M, points, d))
         return -1;
-    gwcopy(gwdata, r, d);
 
     IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
     sprintf(proofpoint + strlen(proofpoint), ".%lu", 0UL);
@@ -6152,7 +6155,7 @@ int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M,
         for (j = 0; j < (1UL << i); j++)
         {
             k = (1 + j*2) << (t - i - 1);
-            if ((r = readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, k, pointPowers != NULL ? pointPowers[k] : k*M, points, u0)) == NULL)
+            if (!readPoint(buf, recoverypoint, proofpoint, fingerprint, gwdata, gdata, k, pointPowers != NULL ? pointPowers[k] : k*M, points, d))
             {
                 for (k = 1; k <= i; k++)
                     gwfree(gwdata, tree[k]);
@@ -6160,7 +6163,6 @@ int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M,
                     free(h[k]);
                 return -1;
             }
-            gwcopy(gwdata, r, d);
 
             for (k = 0; k < i; k++)
                 if ((j & (1 << k)) == 0)
