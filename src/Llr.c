@@ -13586,7 +13586,7 @@ restart:
     if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing || PROOFMODE == BuildCert)
     {
         pointPowers = malloc((s + 1)*sizeof(long));
-        if (IniGetInt(INI_FILE, "Pietrzak", 1))
+        if (IniGetInt(INI_FILE, "Pietrzak", 1) && IniGetInt(INI_FILE, "NoTail", 1))
         {
             for (bit = 0; bit < s; bit++)
             {
@@ -13750,7 +13750,8 @@ restart:
                 bit = bits - (bits - 1)%L2;
                 while (recovery_bit > bit)
                 {
-                    curPoint--;
+                    while ((long)curPoint >= 0 && pointPowers[curPoint] + 1 > bit)
+                        curPoint--;
                     if ((long)curPoint < 0)
                     {
                         recovery_bit = 0;
@@ -13760,6 +13761,11 @@ restart:
                     sprintf(proofpoint + strlen(proofpoint), ".%lu", curPoint);
                     if (fileExists(proofpoint) && readFromFileMD5(gwdata, gdata, proofpoint, fingerprint, &bits, u0, NULL) && pointPowers[curPoint] + 1 == bits)
                         recovery_bit = bits;
+                    else
+                    {
+                        bit -= L2;
+                        saved_recovery_bit = pointPowers[curPoint];
+                    }
                 }
 				break;
 			}
@@ -13768,7 +13774,7 @@ restart:
     }
 
     timer1 = timers[1];
-    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit < bits) && (bits <= saved_recovery_bit))
+    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit - (recovery_bit - 1)%L2 < bits) && (bits <= saved_recovery_bit))
     {
         recovery_bit = bits;
         gwcopy(gwdata, d, u0);
