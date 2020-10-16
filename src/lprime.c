@@ -65,6 +65,7 @@ int MENUING = 0;
 int PROCESSFILE = 0;
 int SINGLETEST = 0;
 int NETWORKING = 0;
+int TESTING = 0;
 
 /* Common code */
 
@@ -88,6 +89,9 @@ int NETWORKING = 0;
 #include "md5.c"
 #include "aprcl.c"
 #include "Llr.c"
+#ifdef TESTLLR
+#include "test.c"
+#endif
 
 /* Signal handlers */
 
@@ -216,15 +220,23 @@ int main (
 		p = argv[i];
 #ifdef NETLLR
 		if (*p == 'h' && !strncmp(p, "http://", 7)) {		// REST URL
-			if (PROCESSFILE || NETWORKING) break;
+			if (PROCESSFILE || NETWORKING || TESTING) break;
 			net = net_init(p);
 			NETWORKING = 1;
 			continue;
 		}
 		else
 #endif
+#ifdef TESTLLR
+		if (*p == 't' && !strncmp(p, "test", 4)) {		// Test mode
+			if (PROCESSFILE || NETWORKING || TESTING) break;
+			TESTING = 1;
+			continue;
+		}
+		else
+#endif
 		if (*p != '-') {		// Process filename in command line
-			if (PROCESSFILE || NETWORKING) break;
+			if (PROCESSFILE || NETWORKING || TESTING) break;
 			strcpy (m_pgen_input, p);
 			strcpy (m_pgen_output, p);
 			p2 = strrchr (m_pgen_output, '.');
@@ -369,6 +381,8 @@ int main (
                 PROOFMODE = VerifyCert;
             else if (strcmp(buf, "VerifyRes") == 0)
                 PROOFMODE = VerifyRes;
+            else if (strcmp(buf, "FullTest") == 0)
+                PROOFMODE = FullTest;
             else
                 goto errexpr;
             break;
@@ -607,6 +621,12 @@ DIGITSONLY:
 		IniGetString(INI_FILE, "Identifier", workerID, 80, "llr");
 		net_main(net, workerID);
 	}
+#endif
+#ifdef TESTLLR
+    else if (TESTING)
+    {
+        DoTests();
+    }
 #endif
 
 /* Continue testing the range */

@@ -4459,7 +4459,7 @@ int saprcltest(char *str, int prptest, int verbose) {
 
 
 int MakePrimoInput (giant N, char *str) {
-	char buffer[100], primofilename[11];
+	char buffer[100], primofilename[20];
 	FILE *fout;
 
 	tempFileName (primofilename, 't', N);	// Construct an input file name for Primo
@@ -6807,7 +6807,7 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
 
     if (IniGetInt(INI_FILE, "DeletePoints", 0))
     {
-        for (i = 0; i <= s; i++)
+        for (i = 0; i < s; i++)
         {
             IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
             sprintf(proofpoint + strlen(proofpoint), ".%lu", i);
@@ -7325,6 +7325,8 @@ int multipointPRP(
             goto cleanup;
         }
         PROOFMODE = VerifyRes;
+        IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+        sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
         CUMULATIVE_TIMING = 1;
@@ -8055,6 +8057,12 @@ if (gwres == NULL)
 	_unlink(recoverypoint);
     strcat(recoverypoint, ".md5");
     _unlink(recoverypoint);
+    if ((PROOFMODE == VerifyCert || PROOFMODE == VerifyRes) && IniGetInt(INI_FILE, "DeletePoints", 0))
+    {
+        _unlink(proofpoint);
+        strcat(proofpoint, ".md5");
+        _unlink(proofpoint);
+    }
     lasterr_point = 0;
     clearErrorPoints();
 	return (TRUE);
@@ -13690,6 +13698,8 @@ restart:
             goto cleanup;
 		}
         PROOFMODE = VerifyRes;
+        IniGetString(INI_FILE, "ProofName", proofpoint, 50, recoverypoint);
+        sprintf(proofpoint + strlen(proofpoint), ".%lu", s);
         maxerr_recovery_mode[6] = 1;
         ERRCHK = 1;
         CUMULATIVE_TIMING = 1;
@@ -14331,6 +14341,12 @@ restart:
 	_unlink (recoverypoint);
     strcat(recoverypoint, ".md5");
     _unlink(recoverypoint);
+    if ((PROOFMODE == VerifyCert || PROOFMODE == VerifyRes) && IniGetInt(INI_FILE, "DeletePoints", 0))
+    {
+        _unlink(proofpoint);
+        strcat(proofpoint, ".md5");
+        _unlink(proofpoint);
+    }
     IniWriteString(INI_FILE, "FFT_Increment", NULL);
 	lasterr_point = 0;
 	free (gwdata);

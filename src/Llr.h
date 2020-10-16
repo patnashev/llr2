@@ -215,7 +215,8 @@ enum ProofModeEnum
     CompressPoints,
     BuildCert,
     VerifyCert,
-    VerifyRes
+    VerifyRes,
+    FullTest
 };
 
 #endif
