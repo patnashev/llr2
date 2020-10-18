@@ -2458,6 +2458,8 @@ int DoAnyTest(struct KBNCTest *kbncTest)
     return DoTest(kbncTest->sk, kbncTest->sb, kbncTest->n, kbncTest->c, kbncTest->res64, kbncTest->cert64);
 }
 
+char TestSubset[IBSIZE];
+
 void DoTests()
 {
     struct KNTest *knTest;
@@ -2473,23 +2475,45 @@ void DoTests()
         readIniFiles();
     }
 
-    /*for (knTest = Test321Plus; knTest->n != 0; knTest++)
-        if (!DoProthTest(knTest))
-            return;
+    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "321plus"))
+    {
+        OutputBoth("Running 321plus tests.\n");
+        for (knTest = Test321Plus; knTest->n != 0; knTest++)
+            if (!DoProthTest(knTest))
+                return;
+    }
 
-    for (knTest = Test321Minus; knTest->n != 0; knTest++)
-        if (!DoLLRTest(knTest))
-            return;*/
+    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "321minus"))
+    {
+        OutputBoth("Running 321minus tests.\n");
+        for (knTest = Test321Minus; knTest->n != 0; knTest++)
+            if (!DoLLRTest(knTest))
+                return;
+    }
 
-    /*for (kbnTest = TestBase5Plus; kbnTest->n != 0; kbnTest++)
-        if (!DoPLMTest(kbnTest, 1))
-            return;
+    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "b5plus"))
+    {
+        OutputBoth("Running b5plus tests.\n");
+        for (kbnTest = TestBase5Plus; kbnTest->n != 0; kbnTest++)
+            if (!DoPLMTest(kbnTest, 1))
+                return;
+    }
 
-    for (kbnTest = TestBase5Minus; kbnTest->n != 0; kbnTest++)
-        if (!DoPLMTest(kbnTest, -1))
-            return;*/
+    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "b5minus"))
+    {
+        OutputBoth("Running b5minus tests.\n");
+        for (kbnTest = TestBase5Minus; kbnTest->n != 0; kbnTest++)
+            if (!DoPLMTest(kbnTest, -1))
+                return;
+    }
 
-    for (kbncTest = TestSpecial; kbncTest->n != 0; kbncTest++)
-        if (!DoAnyTest(kbncTest))
-            return;
+    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "special"))
+    {
+        OutputBoth("Running special tests.\n");
+        for (kbncTest = TestSpecial; kbncTest->n != 0; kbncTest++)
+            if (!DoAnyTest(kbncTest))
+                return;
+    }
+
+    OutputBoth("All tests completed successfully.\n");
 }

@@ -230,7 +230,17 @@ int main (
 #ifdef TESTLLR
 		if (*p == 't' && !strncmp(p, "test", 4)) {		// Test mode
 			if (PROCESSFILE || NETWORKING || TESTING) break;
-			TESTING = 1;
+            if (p[4] == '=')
+            {
+                p += 5;
+                p2 = TestSubset;
+                while (*p && !isspace(*p))
+                    *p2++ = *p++;
+                *p2 = '\0';
+            }
+            else
+                strcpy(TestSubset, "all");
+            TESTING = 1;
 			continue;
 		}
 		else
