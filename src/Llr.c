@@ -12214,9 +12214,18 @@ int isLLRP (
 			gk = newgiant ((gksize >> 4) + 8);	// Allocate space for gk
 			ctog (sgk, gk);						// Convert k string to giant
 		}
+        if (shift > 0) {
+            gshiftleft(shift, gk);			// Shift k multiplier if requested
+        }
+        //	gk must be odd for the LLR test, so, adjust gk and n if necessary.
+        while (!bitval(gk, 0)) {
+            gshiftright(1, gk);	// update k as a giant
+            n++;
+            ninput++;
+        }
+        gtoc(gk, sgk1, sgkbufsize);// Updated k string
 
 		klen = bitlen(gk);			// Bit length of initial k multiplier
-
 		if (klen > 53 || generic) {	// we must use generic reduction
 			dk = 0.0;
 		}
@@ -12226,43 +12235,24 @@ int isLLRP (
 				dk += 4294967296.0*(double)gk->n[1];
 		}
 
+        if ((format != ABCDN) && (format != ABCDNG)) {
+            if (b_else != 1)	// Lei, J.P.
+                sprintf(str, "%s*%lu^%lu-1 = %s*%lu^%lu*2^%lu-1", sgk, binput, ninput, sgk1, b_else, ninput, n);// Number N to test, as a string
+            else
+                sprintf(str, "%s*2^%lu-1", sgk1, n);	// Number N to test, as a string
+        }
+
 // Lei
 		if (b_else != 1) {					// Compute the big multiplier
-			gk1 = newgiant ((gksize>>4) + 8);
-			ultog (b_else, gk1);		
-			power (gk1, ninput);
-			mulg (gk1, gk);
-			free (gk1);
+            gk1 = newgiant(((gksize-idk)>>4) + 8);
+            gtog(gk, gk1);
+            ultog(b_else, gk);
+            power(gk, ninput);
+            mulg(gk1, gk);
 // J.P. shadow   gtoc (gk, sgk1, sgkbufsize);  // Updated k string
 		}
 // Lei end
 
-		if (shift > 0) {
-			gshiftleft (shift, gk);			// Shift k multiplier if requested
-			dk *= (double) (1<<shift);		// Update dk... J.P. 11/02/11
-			if (b_else != 1)
-				strcpy (sgk1, sgk);			// Lei, J.P.
-			else
-				gtoc (gk, sgk1, sgkbufsize);// Updated k string
-		}
-		else {
-			strcpy (sgk1, sgk);
-//	J.P. shadow		if (b_else == 1) strcpy (sgk1, sgk);	// Lei
-		}
-		if ((format != ABCDN) && (format != ABCDNG)) {
-			if (b_else != 1)	// Lei, J.P.
-				sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');// Number N to test, as a string
-			else
-				sprintf (str, "%s*2^%lu%c1", sgk1, n, '-');	// Number N to test, as a string
-		}
-
-//	gk must be odd for the LLR test, so, adjust gk and n if necessary.
-
-
-		while (!bitval(gk, 0)) {
-			gshiftright (1, gk);	// update k as a giant
-			n++;
-		}
 	}
 	else {
 		gk = newgiant ((n>>4)+8);
@@ -12383,10 +12373,15 @@ LLRCONTINUE:
 		}
 // Lei
 // Lei shadow   retval = isPRPinternal (str, dk, 2, n, -1, res);
-		if ((format == ABCDN) || (format == ABCDNG))
+		/*if ((format == ABCDN) || (format == ABCDNG))
 			sprintf (str, "%lu^%lu-%lu^%lu-1", binput, ninput+ndiff, binput, ninput);
 		else
-			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');     // Number N to test, as a string
+			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');*/     // Number N to test, as a string
+        if (b_else != 1)
+        {
+            gtog(gk1, gk);
+            free(gk1);
+        }
 		gbinput = newgiant (2);
 		gbinput->sign = 1;
 		gbinput->n[0] = binput;
@@ -12420,6 +12415,8 @@ LLRCONTINUE:
 		else
 			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');     // Number N to test, as a string
 		Fermat_only = TRUE;
+        if (b_else != 1)
+            gtog(gk1, gk);
 		gbinput = newgiant (2);
 		gbinput->sign = 1;
 		gbinput->n[0] = binput;
@@ -12430,12 +12427,20 @@ LLRCONTINUE:
 // Lei end
 
 		if (!*res) {
+            if (b_else != 1)
+                free(gk1);
 			free(gk);
 			free(N);
 			return retval;
 		}
 		IniWriteInt(INI_FILE, "PRPdone", 1);
 		strcpy (str, buf);	// Lei
+        if (b_else != 1) {					// Compute the big multiplier
+            ultog(b_else, gk);
+            power(gk, ninput);
+            mulg(gk1, gk);
+            free(gk1);
+        }
 	}
 
 // Lei
@@ -12443,6 +12448,8 @@ LLRCONTINUE:
 //	J.P. shadow OutputStr (buf);
 // Lei end
 
+    if (b_else != 1)
+        free(gk1);
 
 	if(abs(gk->sign) == 1) {	// k is a "small" integer
 	    k = gk->n[0];
@@ -13328,6 +13335,7 @@ int isProthP(
     while (bitval(gk, 0) == 0) {
         gshiftright(1, gk);			// update k as a giant
         n++;							// update the exponent
+        ninput++;
     }
     gtoc(gk, sgk1, sgkbufsize);// Updated k string
     klen = bitlen(gk);					// Length of initial k multiplier
@@ -13784,7 +13792,7 @@ restart:
     }
 
     timer1 = timers[1];
-    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit - (recovery_bit - 1)%L2 < bits) && (bits <= saved_recovery_bit))
+    if (echkGerbicz && fileExists(recoverypoint) && readFromFileMD5(gwdata, gdata, recoverypoint, fingerprint, &bits, d, NULL) && (recovery_bit == 0 || ((recovery_bit - (recovery_bit - 1)%L2 <= bits) && (bits <= saved_recovery_bit))))
     {
         recovery_bit = bits;
         gwcopy(gwdata, d, u0);
