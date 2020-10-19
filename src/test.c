@@ -28,17 +28,31 @@ struct KBNCTest
 
 struct KBNCTest TestSpecial[] = {
 { "21", "2", 94801, 1, 0x0ULL, 0x67927D1C902F97A2ULL },
+{ "27", "2", 100000, -1, 0xB75078F29D815E01ULL, 0x3BCEFD5BF9427478ULL },
+{ "227753", "2", 91397, 1, 0x0ULL, 0x9DF467E84389769AULL },
+{ "224027", "2", 216283, 1, 0xE898CDE930A5FB55ULL, 0x42C55FDE962E02B7ULL },
 { "3706", "5", 70632, 1, 0x0ULL, 0x98F5B789F45633EDULL },
 { "1", "30406", 8192, 1, 0x0ULL, 0x4E0B6902C455283CULL },
 { "27", "2", 152530, -1, 0x0ULL, 0x77DC790E045A1B38ULL },
-{ "224027", "2", 216283, 1, 0xE898CDE930A5FB55ULL, 0x42C55FDE962E02B7ULL },
 { "27253", "2", 272347, -1, 0x0ULL, 0x10C8C11D85C4BDC2ULL },
-{ "21", "2", 94801, 1, 0x0ULL, 0x67927D1C902F97A2ULL },
-{ "227753", "2", 91397, 1, 0x0ULL, 0x9DF467E84389769AULL },
 { "121", "2", 180588, 1, 0xD29A17CBD4D2CBA8ULL, 0xAC3EA6009169F0EEULL },
 { "481899", "2", 481899, 1, 0x0ULL, 0x7D77FDAA85D2D400ULL },
 { "667071", "2", 667071, -1, 0x0ULL, 0xB1C26A72FF1B2EE2ULL },
+{ "55459", "2", 1000054, 1, 0xE7423444946A2B6EULL, 0xC2EBD8E9E32B9DCDULL },
+{ "368", "383", 205463, 1, 0xF12325CE7C4B320DULL, 0x3DB2439AF97B7A29ULL },
 { "1", "550207488", 32768, 1, 0x0ULL, 0xC76CB21E3C1CDE9AULL },
+{ "", "", 0, 0, 0x0ULL, 0x0ULL } };
+
+struct KBNCTest TestPrime[] = {
+{ "94112", "121", 94112, -1, 0x0ULL, 0x7CF56DDB745B02CBULL },
+{ "178658", "5", 1525224, -1, 0x0ULL, 0xB2A485B0B3998B4AULL },
+{ "2163", "2", 1255556, 1, 0x0ULL, 0x2053492ED665AE1EULL },
+{ "129897", "68", 129897, 1, 0x0ULL, 0xFEC0DEF24B933320ULL },
+{ "59912", "5", 1500861, 1, 0x0ULL, 0x936BF85EAB8AC2BFULL },
+{ "3752948", "2", 3752948, -1, 0x0ULL, 0xDEE27FA50C887BEDULL },
+{ "19249", "2", 13018586, 1, 0x0ULL, 0x6A8C1D0A2DD6E30BULL },
+{ "1300274732577", "2", 1290000, -1, 0x0ULL, 0x18DBCEE94CEEEE64ULL },
+{ "1354828", "2", 1354828, 1, 0x0ULL, 0xB1B50DA15EA1950CULL },
 { "", "", 0, 0, 0x0ULL, 0x0ULL } };
 
 struct KNTest Test321Plus[] = {
@@ -2356,7 +2370,7 @@ int DoTest(
             PROOFMODE = FullTest;
         return TRUE;
     }
-    if (PROOFMODE == SavePoints || PROOFMODE == BuildCert)
+    if (refCert64 != 0 && (PROOFMODE == SavePoints || PROOFMODE == BuildCert))
     {
         cert64[16] = 0;
         uint64_t testCert64;
@@ -2511,6 +2525,14 @@ void DoTests()
     {
         OutputBoth("Running special tests.\n");
         for (kbncTest = TestSpecial; kbncTest->n != 0; kbncTest++)
+            if (!DoAnyTest(kbncTest))
+                return;
+    }
+
+    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "prime"))
+    {
+        OutputBoth("Running prime tests.\n");
+        for (kbncTest = TestPrime; kbncTest->n != 0; kbncTest++)
             if (!DoAnyTest(kbncTest))
                 return;
     }

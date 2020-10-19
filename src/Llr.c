@@ -16620,7 +16620,7 @@ int process_num (
 			b_else = base;				// Is odd...
 			b_2up = binput / b_else;	// binput = b_else*b_2up
 			if ((b_2up > b_else) && (!((format == ABCC) || (format == ABCK) || (format == ABCRU)
-												|| (format == ABCGRU) || (format == ABCVARAQS)))) {
+												|| (format == ABCGRU) || (format == ABCVARAQS))) && PROOFMODE == NoProof) {
 				superPRP = 0;			// Then b_2up^ninput > b_else^ninput
 			}							// N = k*binput^ninput+c = (k*b_else^ninput)*2^n+c
 			else {
