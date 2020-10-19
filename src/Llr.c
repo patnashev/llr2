@@ -12217,11 +12217,10 @@ int isLLRP (
         if (shift > 0) {
             gshiftleft(shift, gk);			// Shift k multiplier if requested
         }
-        //	gk must be odd for the LLR test, so, adjust gk and n if necessary.
-        while (!bitval(gk, 0)) {
-            gshiftright(1, gk);	// update k as a giant
-            n++;
-            ninput++;
+        while (gmodul(gk, binput) == 0) {
+            uldivg(binput, gk);			// update k as a giant
+            n += n/ninput;							// update the exponent
+            ninput++;							// update the exponent
         }
         gtoc(gk, sgk1, sgkbufsize);// Updated k string
 
@@ -12250,7 +12249,12 @@ int isLLRP (
             power(gk, ninput);
             mulg(gk1, gk);
 // J.P. shadow   gtoc (gk, sgk1, sgkbufsize);  // Updated k string
-		}
+            //	gk must be odd for the LLR test, so, adjust gk and n if necessary.
+            while (!bitval(gk, 0)) {
+                gshiftright(1, gk);	// update k as a giant
+                n++;
+            }
+        }
 // Lei end
 
 	}
@@ -12415,8 +12419,9 @@ LLRCONTINUE:
 		else
 			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');     // Number N to test, as a string
 		Fermat_only = TRUE;
+#define gswap(p,q)  {giant tgq; tgq = *(p); *(p) = *(q); *(q) = tgq;}
         if (b_else != 1)
-            gtog(gk1, gk);
+            gswap(&gk1, &gk);
 		gbinput = newgiant (2);
 		gbinput->sign = 1;
 		gbinput->n[0] = binput;
@@ -12435,12 +12440,8 @@ LLRCONTINUE:
 		}
 		IniWriteInt(INI_FILE, "PRPdone", 1);
 		strcpy (str, buf);	// Lei
-        if (b_else != 1) {					// Compute the big multiplier
-            ultog(b_else, gk);
-            power(gk, ninput);
-            mulg(gk1, gk);
-            free(gk1);
-        }
+        if (b_else != 1)
+            gswap(&gk1, &gk);
 	}
 
 // Lei
@@ -13331,11 +13332,10 @@ int isProthP(
     if (shift > 0) {
         gshiftleft(shift, gk);			// Shift k multiplier if requested
     }
-    //	gk must be odd for the Proth test, so, adjust gk and n if necessary.
-    while (bitval(gk, 0) == 0) {
-        gshiftright(1, gk);			// update k as a giant
-        n++;							// update the exponent
-        ninput++;
+    while (gmodul(gk, binput) == 0) {
+        uldivg(binput, gk);			// update k as a giant
+        n += n/ninput;							// update the exponent
+        ninput++;							// update the exponent
     }
     gtoc(gk, sgk1, sgkbufsize);// Updated k string
     klen = bitlen(gk);					// Length of initial k multiplier
@@ -13357,6 +13357,11 @@ int isProthP(
 
     // Lei
     if (b_else != 1) {					// Compute the big multiplier
+        //	gk must be odd for the Proth test, so, adjust gk and n if necessary.
+        while (bitval(gk, 0) == 0) {
+            gshiftright(1, gk);			// update k as a giant
+            n++;							// update the exponent
+        }
         gk1 = newgiant(((gksize-idk)>>4) + 8);
         gtog(gk, gk1);
         ultog(b_else, gk);
