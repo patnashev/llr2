@@ -11182,8 +11182,35 @@ int plusminustest (
 			sprintf (str, "%s*%s^%lu%c%d", sgk1, sgb, n, incr < 0 ? '-' : '+', abs(incr));
 	}
 
-	bits = n * bitlen(gb) + bitlen(gk); 
-	N =  newgiant ((bits >> 4) + 8);		// Allocate memory for N
+//	Be sure the base is not a power
+
+    factorized = findgbpf(gb);			// Factorize the base if possible...
+    for (jmax = 29; (jmax>0) && !bpf[jmax]; jmax--);
+    if (factorized)
+    {
+        a = vpf[0];
+        for (j = 1; j <= jmax; j++)
+            a = gcd(a, vpf[j]);
+        if (a > 1)
+        {
+            for (j = 0; j <= jmax; j++)
+                vpf[j] /= a;
+            n *= a;
+            tmp = newgiant(2*abs(gb->sign) + 8);
+            ultog(1, gb);
+            for (j = 0; j <= jmax; j++)
+            {
+                if (bpf[j] == 1)
+                    gtog(gbpf[j], tmp);
+                else
+                    ultog(bpf[j], tmp);
+                power(tmp, vpf[j]);
+                mulg(tmp, gb);
+            }
+            free(tmp);
+            tmp = NULL;
+        }
+    }
 
 //	Be sure the base does not divide the gk multiplier :
 
@@ -11201,7 +11228,10 @@ int plusminustest (
 
 //	Compute the number we are testing.
 
-	gtog (gb, N);
+    bits = n * bitlen(gb) + bitlen(gk);
+    N = newgiant((bits >> 4) + 8);		// Allocate memory for N
+
+    gtog (gb, N);
 	power (N, n);
 
 	Nlen = bitlen (N);					// Bit length of base^n
@@ -11329,8 +11359,6 @@ PLMCONTINUE:
 	Nlen = bitlen (N);					// Bit length of N
 
 	nbdg = gnbdg (N, 10);				// Compute the number of decimal digits of the tested number.
-	factorized = findgbpf (gb);			// Factorize the base if possible...
-	for (jmax=29; (jmax>0) && !bpf[jmax]; jmax--);
 
 	jmin = 0;							// Choose the minimum required factorized part.
 	if (jmax) {							// The base is composite...
