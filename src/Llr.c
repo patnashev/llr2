@@ -6567,7 +6567,7 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
         }
 
         gwnum* products = NULL;
-        cache = IniGetInt(INI_FILE, "CachePoints", 1);
+        cache = IniGetInt(INI_FILE, "CachePoints", 0);
         if (cache)
         {
             products = (gwnum*)malloc(sizeof(gwnum)*(t + 1));
