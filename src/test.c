@@ -2349,6 +2349,8 @@ void ReadUInt64(char *str, uint64_t *val)
     *val = strtoull(str, NULL, 16);
 }
 
+int test_fft_inc = 0;
+
 void resetTest()
 {
     error_count = 0;
@@ -2359,6 +2361,7 @@ void resetTest()
     memset(last_maxerr, 0, sizeof(last_maxerr));
     total_error_points = 0;
     clear_timers();
+    IniWriteInt(INI_FILE, "FFT_Increment", test_fft_inc);
 
     res64[0] = 0;
     cert64[0] = 0;
@@ -2431,6 +2434,7 @@ int DoTest(
         res = FALSE;
         PROOFMODE = BuildCert;
         resetTest();
+        IniWriteInt(INI_FILE, "FFT_Increment", test_fft_inc + 1);
         if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
         {
             OutputBoth("BuildCert failed.\n");
@@ -2456,7 +2460,7 @@ int DoTest(
         cert64[16] = 0;
         uint64_t testCert64;
         ReadUInt64(cert64, &testCert64);
-        if (testCert64 != refCert64)
+        if (refCert64 != 0 && testCert64 != refCert64)
         {
             OutputBoth("BuildCert Raw certificate mismatch.\n");
             return FALSE;
@@ -2520,10 +2524,6 @@ char TestSubset[IBSIZE];
 
 void DoTests()
 {
-    struct KNTest *knTest;
-    struct KBNTest *kbnTest;
-    struct KBNCTest *kbncTest;
-
     if (PROOFMODE == FullTest)
     {
         IniWriteInt(INI_FILE, "Gerbicz", 1);
@@ -2532,54 +2532,65 @@ void DoTests()
         IniWriteString(INI_FILE, "RndSeed", "123456");
         readIniFiles();
     }
+    test_fft_inc = IniGetInt(INI_FILE, "FFT_Increment", 0);
 
-    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "321plus"))
+    while (1)
     {
-        OutputBoth("Running 321plus tests.\n");
-        for (knTest = Test321Plus; knTest->n != 0; knTest++)
-            if (!DoProthTest(knTest))
-                return;
+        struct KNTest *knTest;
+        struct KBNTest *kbnTest;
+        struct KBNCTest *kbncTest;
+
+        if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "321plus"))
+        {
+            OutputBoth("Running 321plus tests.\n");
+            for (knTest = Test321Plus; knTest->n != 0; knTest++)
+                if (!DoProthTest(knTest))
+                    break;
+        }
+
+        if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "321minus"))
+        {
+            OutputBoth("Running 321minus tests.\n");
+            for (knTest = Test321Minus; knTest->n != 0; knTest++)
+                if (!DoLLRTest(knTest))
+                    break;
+        }
+
+        if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "b5plus"))
+        {
+            OutputBoth("Running b5plus tests.\n");
+            for (kbnTest = TestBase5Plus; kbnTest->n != 0; kbnTest++)
+                if (!DoPLMTest(kbnTest, 1))
+                    break;
+        }
+
+        if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "b5minus"))
+        {
+            OutputBoth("Running b5minus tests.\n");
+            for (kbnTest = TestBase5Minus; kbnTest->n != 0; kbnTest++)
+                if (!DoPLMTest(kbnTest, -1))
+                    break;
+        }
+
+        if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "special"))
+        {
+            OutputBoth("Running special tests.\n");
+            for (kbncTest = TestSpecial; kbncTest->n != 0; kbncTest++)
+                if (!DoAnyTest(kbncTest))
+                    break;
+        }
+
+        if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "prime"))
+        {
+            OutputBoth("Running prime tests.\n");
+            for (kbncTest = TestPrime; kbncTest->n != 0; kbncTest++)
+                if (!DoAnyTest(kbncTest))
+                    break;
+        }
+
+        OutputBoth("All tests completed successfully.\n");
+        break;
     }
 
-    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "321minus"))
-    {
-        OutputBoth("Running 321minus tests.\n");
-        for (knTest = Test321Minus; knTest->n != 0; knTest++)
-            if (!DoLLRTest(knTest))
-                return;
-    }
-
-    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "b5plus"))
-    {
-        OutputBoth("Running b5plus tests.\n");
-        for (kbnTest = TestBase5Plus; kbnTest->n != 0; kbnTest++)
-            if (!DoPLMTest(kbnTest, 1))
-                return;
-    }
-
-    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "b5minus"))
-    {
-        OutputBoth("Running b5minus tests.\n");
-        for (kbnTest = TestBase5Minus; kbnTest->n != 0; kbnTest++)
-            if (!DoPLMTest(kbnTest, -1))
-                return;
-    }
-
-    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "special"))
-    {
-        OutputBoth("Running special tests.\n");
-        for (kbncTest = TestSpecial; kbncTest->n != 0; kbncTest++)
-            if (!DoAnyTest(kbncTest))
-                return;
-    }
-
-    if (!strcmp(TestSubset, "all") || !strcmp(TestSubset, "prime"))
-    {
-        OutputBoth("Running prime tests.\n");
-        for (kbncTest = TestPrime; kbncTest->n != 0; kbncTest++)
-            if (!DoAnyTest(kbncTest))
-                return;
-    }
-
-    OutputBoth("All tests completed successfully.\n");
+    IniWriteInt(INI_FILE, "FFT_Increment", test_fft_inc);
 }
