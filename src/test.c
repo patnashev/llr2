@@ -2344,6 +2344,12 @@ struct KBNTest TestBase5Minus[] = {
 { 2, 5, 9976, 0x433A7BD31EBAE589ULL, 0xE79B2F89672BFE2BULL },
 { 0, 0, 0, 0x0ULL, 0x0ULL } };
 
+void TestOutput(char *msg)
+{
+    writeResults(msg);
+    printf(msg);
+}
+
 void ReadUInt64(char *str, uint64_t *val)
 {
     *val = strtoull(str, NULL, 16);
@@ -2390,14 +2396,14 @@ int DoTest(
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
     {
-        OutputBoth("Test failed.\n");
+        TestOutput("Test failed.\n");
         return FALSE;
     }
     if (PROOFMODE == NoProof || PROOFMODE == SavePoints || PROOFMODE == BuildCert)
     {
         if ((refRes64 == 0 && !res) || (refRes64 != 0 && res))
         {
-            OutputBoth("Primality mismatch.\n");
+            TestOutput("Primality mismatch.\n");
             return FALSE;
         }
         if (refRes64 != 0)
@@ -2406,7 +2412,7 @@ int DoTest(
             ReadUInt64(res64, &testRes64);
             if (testRes64 != refRes64)
             {
-                OutputBoth("Residue mismatch.\n");
+                TestOutput("Residue mismatch.\n");
                 return FALSE;
             }
         }
@@ -2426,7 +2432,7 @@ int DoTest(
             refCert64 = testCert64;
         if (testCert64 != refCert64)
         {
-            OutputBoth("Raw certificate mismatch.\n");
+            TestOutput("Raw certificate mismatch.\n");
             return FALSE;
         }
     }
@@ -2439,14 +2445,14 @@ int DoTest(
         IniWriteInt(INI_FILE, "FFT_Increment", test_fft_inc + 1);
         if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
         {
-            OutputBoth("BuildCert failed.\n");
+            TestOutput("BuildCert failed.\n");
             return FALSE;
         }
 
         uint64_t testRes64;
         if ((refRes64 == 0 && !res) || (refRes64 != 0 && res))
         {
-            OutputBoth("BuildCert primality mismatch.\n");
+            TestOutput("BuildCert primality mismatch.\n");
             return FALSE;
         }
         if (refRes64 != 0)
@@ -2454,7 +2460,7 @@ int DoTest(
             ReadUInt64(res64, &testRes64);
             if (testRes64 != refRes64)
             {
-                OutputBoth("BuildCert residue mismatch.\n");
+                TestOutput("BuildCert residue mismatch.\n");
                 return FALSE;
             }
         }
@@ -2464,7 +2470,7 @@ int DoTest(
         ReadUInt64(cert64, &testCert64);
         if (testCert64 != refCert64)
         {
-            OutputBoth("BuildCert Raw certificate mismatch.\n");
+            TestOutput("BuildCert Raw certificate mismatch.\n");
             return FALSE;
         }
         ReadUInt64(cert64 + 17, &testCert64);
@@ -2473,13 +2479,13 @@ int DoTest(
         resetTest();
         if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
         {
-            OutputBoth("VerifyCert failed.\n");
+            TestOutput("VerifyCert failed.\n");
             return FALSE;
         }
         ReadUInt64(res64, &testRes64);
         if (testRes64 != testCert64)
         {
-            OutputBoth("Certificate mismatch.\n");
+            TestOutput("Certificate mismatch.\n");
             return FALSE;
         }
 
@@ -2530,7 +2536,7 @@ int DoTestSubset(char *subset)
 
     if (!strcmp(subset, "all") || !strcmp(subset, "321plus"))
     {
-        OutputBoth("Running 321plus tests.\n");
+        TestOutput("Running 321plus tests.\n");
         for (knTest = Test321Plus; knTest->n != 0; knTest++)
             if (!DoProthTest(knTest))
                 return FALSE;
@@ -2538,7 +2544,7 @@ int DoTestSubset(char *subset)
 
     if (!strcmp(subset, "all") || !strcmp(subset, "321minus"))
     {
-        OutputBoth("Running 321minus tests.\n");
+        TestOutput("Running 321minus tests.\n");
         for (knTest = Test321Minus; knTest->n != 0; knTest++)
             if (!DoLLRTest(knTest))
                 return FALSE;
@@ -2546,7 +2552,7 @@ int DoTestSubset(char *subset)
 
     if (!strcmp(subset, "all") || !strcmp(subset, "b5plus"))
     {
-        OutputBoth("Running b5plus tests.\n");
+        TestOutput("Running b5plus tests.\n");
         for (kbnTest = TestBase5Plus; kbnTest->n != 0; kbnTest++)
             if (!DoPLMTest(kbnTest, 1))
                 return FALSE;
@@ -2554,7 +2560,7 @@ int DoTestSubset(char *subset)
 
     if (!strcmp(subset, "all") || !strcmp(subset, "b5minus"))
     {
-        OutputBoth("Running b5minus tests.\n");
+        TestOutput("Running b5minus tests.\n");
         for (kbnTest = TestBase5Minus; kbnTest->n != 0; kbnTest++)
             if (!DoPLMTest(kbnTest, -1))
                 return FALSE;
@@ -2562,7 +2568,7 @@ int DoTestSubset(char *subset)
 
     if (!strcmp(subset, "all") || !strcmp(subset, "special"))
     {
-        OutputBoth("Running special tests.\n");
+        TestOutput("Running special tests.\n");
         for (kbncTest = TestSpecial; kbncTest->n != 0; kbncTest++)
             if (!DoAnyTest(kbncTest))
                 return FALSE;
@@ -2570,7 +2576,7 @@ int DoTestSubset(char *subset)
 
     if (!strcmp(subset, "all") || !strcmp(subset, "prime"))
     {
-        OutputBoth("Running prime tests.\n");
+        TestOutput("Running prime tests.\n");
         for (kbncTest = TestPrime; kbncTest->n != 0; kbncTest++)
             if (!DoAnyTest(kbncTest))
                 return FALSE;
@@ -2583,6 +2589,14 @@ char TestSubset[IBSIZE];
 
 void DoTests()
 {
+    if (TestSubset[0] == 0 || TestSubset[0] == '?')
+    {
+        printf("Usage: llr2 {-oGerbicz=1 | -pFullTest} test[=subset]\n");
+        printf("Subsets:\n");
+        printf("\tall = 321plus + 321minus + b5plus + b5minus + special + prime\n");
+        return;
+    }
+
     primolimit = 0;
     if (PROOFMODE == FullTest)
     {
@@ -2595,7 +2609,7 @@ void DoTests()
     test_fft_inc = IniGetInt(INI_FILE, "FFT_Increment", 0);
 
     if (DoTestSubset(TestSubset))
-        OutputBoth("All tests completed successfully.\n");
+        TestOutput("All tests completed successfully.\n");
 
     IniWriteInt(INI_FILE, "FFT_Increment", test_fft_inc);
 }
