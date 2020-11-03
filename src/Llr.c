@@ -6831,7 +6831,8 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
 error:
     if (h != NULL)
         free(h);
-	return FALSE;
+    timers[1] = timer1;
+    return FALSE;
 }
 
 int findgbpf(giant gb);
@@ -11148,7 +11149,7 @@ int plusminustest (
 	unsigned long shift,
 	int	*res)
 {
-	char	filename[20], buf[sgkbufsize+256], str[sgkbufsize+256], sgk1[sgkbufsize], fft_desc[256], oldres64[17]; 
+	char	filename[20], buf[sgkbufsize+256], str[sgkbufsize+256], sgk1[sgkbufsize], sgb1[sgkbufsize], fft_desc[256], oldres64[17];
 	unsigned long base, bits, explen, iters, bit, a, frestart=FALSE;
 	unsigned long newa, maxrestarts, P, factorized_part = 0;
 	uint32_t hi = 0, lo = 0, nincr = 1;
@@ -11175,11 +11176,6 @@ int plusminustest (
 		ctog (sgk, gk);						// Convert k string to giant
 		grem = newgiant (2*abs(gk->sign) + 8);	// place for mod (gk, gb)
 		gshiftleft (shift, gk);				// Shift k multiplier if requested
-		gtoc (gk, sgk1, sgkbufsize);		// Updated k string
-		if (!strcmp(sgk1, "1"))
-			sprintf (str, "%s^%lu%c%d", sgb, n, incr < 0 ? '-' : '+', abs(incr));
-		else
-			sprintf (str, "%s*%s^%lu%c%d", sgk1, sgb, n, incr < 0 ? '-' : '+', abs(incr));
 	}
 
 //	Be sure the base is not a power
@@ -11225,6 +11221,15 @@ int plusminustest (
 		}
 		free (grem);
 	}
+
+    if ((gformat != ABCDN) && (gformat != ABCDNG)) {
+        gtoc(gk, sgk1, sgkbufsize);		// Updated k string
+        gtoc(gb, sgb1, sgkbufsize);		// Updated b string
+        if (!strcmp(sgk1, "1"))
+            sprintf(str, "%s^%lu%c%d", sgb1, n, incr < 0 ? '-' : '+', abs(incr));
+        else
+            sprintf(str, "%s*%s^%lu%c%d", sgk1, sgb1, n, incr < 0 ? '-' : '+', abs(incr));
+    }
 
 //	Compute the number we are testing.
 
