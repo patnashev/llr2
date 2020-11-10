@@ -6327,6 +6327,8 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
 
 	M = 0;
 
+    end_timer(1);
+    clear_timer(1);
 	start_timer(1);
 	timer1 = timers[1];
 
@@ -6831,7 +6833,6 @@ int buildCertificate(unsigned long n, unsigned long *pointPowers, unsigned long 
 error:
     if (h != NULL)
         free(h);
-    timers[1] = timer1;
     return FALSE;
 }
 
