@@ -7498,9 +7498,9 @@ int multipointPRP(
 	/* Output a message about the FFT length */
 
     if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing)
-        sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
+        sprintf(buf, "Using %s, a = %d, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
     else
-        sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
+        sprintf(buf, "Using %s, a = %d, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
 
 	OutputStr(buf);
 	if (verbose || restarting) {
@@ -7952,7 +7952,7 @@ int multipointPRP(
                 sprintf(buf, "%s is divisible by a.", str);
 		}
 		else {
-			sprintf(buf, "%s is base %lu-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
+			sprintf(buf, "%s is base %d-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
 		}
 
         if (PROOFMODE == SavePoints && IniGetInt(INI_FILE, "Pietrzak", 1))
@@ -12217,7 +12217,7 @@ int isLLRP (
 	time_t	start_time, current_time; 
 	double	reallyminerr = 1.0; 
 	double	reallymaxerr = 0.0; 
-	double	dk;
+	double	dk = 0.0;
 
 // Lei
 	double ddk;
@@ -13977,11 +13977,11 @@ restart:
 /* Output a message about the FFT length and the Proth base. */
 
     if (PROOFMODE == SavePoints || PROOFMODE == RedoMissing)
-        sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
+        sprintf(buf, "Using %s, a = %d, L2 = %lu*%lu, M = %lu\n", fft_desc, a, L, L2/L, M);
     else if (echkGerbicz)
-		sprintf(buf, "Using %s, a = %lu, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
-	else
-		sprintf (buf, "Using %s, a = %lu\n", fft_desc, a);
+        sprintf(buf, "Using %s, a = %d, L2 = %lu*%lu\n", fft_desc, a, L, L2/L);
+    else
+        sprintf (buf, "Using %s, a = %d\n", fft_desc, a);
 
 	if (!setuponly || (gwdata->FFTLEN != OLDFFTLEN)) {
 		OutputStr (buf);
@@ -16589,6 +16589,15 @@ int ispoweroftwo (
 	return (n == 1);
 }
 
+#ifdef TESTLLR
+int DoFullTest(
+    char *sgk,
+    char *sgb,
+    unsigned long n,
+    int	incr,
+    int	*res);
+#endif
+
 int process_num (
 	unsigned long format,
 	char *sgk,
@@ -16636,6 +16645,11 @@ int process_num (
 
 	if (format == ABCSP)				// Do the PRP test of a Wagstaff number
 		return (isWSPRP (sgk, n, res));
+
+#ifdef TESTLLR
+    if (PROOFMODE == FullTest)
+        return DoFullTest(sgk, sgb, n, incr, res);
+#endif
 
 	gb = newgiant (strlen(sgb)/2 + 8);	// Allocate one byte per decimal digit + spares
 	ctog (sgb, gb);						// Convert b string to giant
