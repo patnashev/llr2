@@ -9847,6 +9847,7 @@ int IsPRP (							// General PRP test
 		divg (gb, N);				// Divide N by (base-1)
 		iaddg (1, gb);
 		quotient = TRUE;
+        generic = TRUE;
 //		strong = FALSE;				// Do a simple Fermat PRP test (not strong).
 	}
 	else if (format == ABCVARAQS) {
@@ -10401,6 +10402,11 @@ int findgbpf (giant gbase) {		// find all prime factors of a large integer base
 			free(b);
 			return TRUE;
 		}
+        else if (bitlen(b) > 100) {
+            gtog(b, gbpf[i]);			// The cofactor is too big
+            free(b);
+            return FALSE;
+        }
 		else {
 			gfact(b, gbpf[i], 0, 0, debug);// Try to factorize using R.Crandall code
 			gtog(gbase, gbpc[i]);
