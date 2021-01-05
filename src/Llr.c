@@ -13741,7 +13741,7 @@ restart:
         if (verbose || restarting) {
             writeError(buf);
         }
-        stopping = buildCertificate(total, pointPowers, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
+        stopping = buildCertificate(total, IniGetInt(INI_FILE, "NoTail", 1) ? pointPowers : NULL, s, a, recoverypoint, productpoint, fingerprint, &recovery_bit, gwdata, gdata, u0, x, d, check_d, tmp, tmp2);
 		if (stopping != TRUE || (total - recovery_bit + 1 > 2*s*sqrt(total)))
 		{
 			if (stopping == FALSE)
