@@ -6150,6 +6150,8 @@ int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M,
 
         if (i == t)
             break;
+        if (stopCheck())
+            return -1;
 
         tree[i] = gwalloc(gwdata);
         for (j = 0; j < (1UL << i); j++)
@@ -6165,6 +6167,9 @@ int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M,
             }
 
             for (k = 0; k < i; k++)
+            {
+                if (stopCheck())
+                    return -1;
                 if ((j & (1 << k)) == 0)
                 {
                     gwcopy(gwdata, d, tree[i - k]);
@@ -6216,6 +6221,7 @@ int compressPoints(unsigned long *pointPowers, unsigned long s, unsigned long M,
                     CHECK_IF_ANY_ERROR(d, (ops), (i*s*t + j*t + k), 6);
                     ops++;
                 }
+            }
         }
 
         IniGetString(INI_FILE, "ProductName", proofpoint, 50, productpoint);
@@ -14315,8 +14321,11 @@ restart:
         stopping = compressPoints(pointPowers, s, M, recoverypoint, productpoint, fingerprint, gwdata, gdata, points, u0, x, d, check_d, tmp, tmp2);
         if (stopping == FALSE)
             goto error;
-        //retval = (stopping == TRUE);
-        //goto cleanup;
+        if (stopping == -1)
+        {
+            retval = FALSE;
+            goto cleanup;
+        }
     }
 
     if (!*res && PROOFMODE == VerifyRes && IniGetInt(INI_FILE, "CheckRoots", 0) && !checkRootsPlus(NULL, iters, gwdata, u0, x, tmp))
