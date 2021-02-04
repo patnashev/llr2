@@ -11218,6 +11218,14 @@ int plusminustest (
             }
             free(tmp);
             tmp = NULL;
+            for (j = 0; j <= jmax; j++)
+            {
+                gtog(gb, gbpc[j]);
+                if (bpf[j] == 1)
+                    divg(gbpf[j], gbpc[j]);
+                else
+                    uldivg(bpf[j], gbpc[j]);
+            }
         }
     }
 
