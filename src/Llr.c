@@ -13857,7 +13857,11 @@ restart:
         gwcopy(gwdata, d, u0);
     }
     else
+    {
+        if (fileExists(recoverypoint))
+            io_reset(recoverypoint);
         timers[1] = timer1;
+    }
     saved_recovery_bit = recovery_bit;
 	bit = recovery_bit;
 
