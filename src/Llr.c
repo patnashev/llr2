@@ -13342,7 +13342,7 @@ int isProthP(
 	gwnum	u0;
     gwnum   *points;
     giant	tmp, tmp2, gbinput;
-	char	checkpoint[20], recoverypoint[20], productpoint[20], proofpoint[20], buf[sgkbufsize+256],
+	char	checkpoint[20], recoverypoint[20], productpoint[20], proofpoint[64], buf[sgkbufsize+256],
 		str[sgkbufsize+256], fft_desc[256], sgk1[sgkbufsize];
     uint32_t fingerprint;
     unsigned long* pointPowers;
