@@ -402,89 +402,102 @@ int main (
 
 		case 'Q':
 		case 'q':
+		{
+			char *multiplier, *base, *exponent, *addin, *exponent2;
+			int   exponent_len, exponent2_len;
+			char *orig_p;
+
+			orig_p = p = strdup(p);			// Will modity original argv string, better make a copy
+
 			if (!isdigit(*p))				// must begin with digits...
 				goto errexpr;
-			p2 = multiplier;				// get the expected multiplier
+			multiplier = p;					// get the expected multiplier
 			while (isdigit(*p))				// copy the digits
-				*p2++ = *p++;
-			*p2 = '\0';
+				p++;
 			if (*p == '\0') {				// Multiplier alone
-				strcpy (base, "2");			// No matter...
-				strcpy (exponent, "0");		// Exponent = zero
-				strcpy (addin, "+0");		// c = +zero
+				base = "2";					// No matter...
+				exponent = "0";				// Exponent = zero
+				exponent_len = 1;
+				addin = "+0";				// c = +zero
 				goto DIGITSONLY;
 			}
 			if (*p == '^')	{				// the multiplier was ommitted
-				strcpy (base, multiplier);	// get the base in place
-				strcpy (multiplier, "1");	// default multiplier = 1
-				p++;
+				base = multiplier;			// get the base in place
+				multiplier = "1";			// default multiplier = 1
 				goto NOMULTIPLIER;
 			}
-			else if (*p++ != '*')			// now, get the base
+			if (*p != '*')					// now, get the base
 				goto errexpr;
+			*p++ = '\0';					// terminate previous number and get the base
 			if (!isdigit(*p))				// it must be a digit string
 				goto errexpr;
-			p2 = base;
+			base = p;
 			while (isdigit(*p))				// copy the digits
-				*p2++ = *p++;
-			*p2 = '\0';
-			if (*p++ != '^')				// must be power
+				p++;
+			if (*p != '^')					// must be power
 				goto errexpr;
 NOMULTIPLIER:
+			*p++ = '\0';					// terminate previous number
 			if (!isdigit(*p))				// must be digits...
 				goto errexpr;
-			p2 = exponent;					// get the exponent
+			exponent = p;					// get the exponent
 			while (isdigit(*p))				// copy the digits
-				*p2++ = *p++;
-			*p2 = '\0';
+				p++;
+			exponent_len = p - exponent;    // cannot terminate exponent with \0 (need +/- for addin), so save its length
 			if (*p != '+' && *p != '-')		// must be plus or minus
 				goto errexpr;
-			p2 = addin;
-			*p2++ = *p++;					// copy the sign
+			addin = p;
+			p++;							// copy the sign
 			if (!isdigit(*p))
 				goto errexpr;
 			while (isdigit(*p))				// copy the c value
-				*p2++ = *p++; 
-			*p2 = '\0';
-			if ((*p != '\0') && ((addin[0] != '-') || (*p != '^')))	// must be end of string or diffnum...
-				goto errexpr;
-			dnflag = ' ';					// restore the dnflag
-			if (*p++ != '\0') {
-				if (strcmp (base, addin+1))	// The second base must be the same...
+				p++;
+			if (*p == '\0') {				// must be end of string or diffnum...
+				dnflag = ' ';				// restore the dnflag
+			} else if (addin[0] == '-' && *p == '^') {
+				*p++ = 0;						// terminate second base
+				if (strcmp (base, addin+1))		// The second base must be the same...
 					goto errexpr;
 				if (!isdigit(*p))				// must be digits...
 					goto errexpr;
-				p2 = exponent2;					// get the exponent
+				exponent2 = p;					// get the exponent
 				while (isdigit(*p))				// copy the digits
-					*p2++ = *p++;
-				*p2 = '\0';
+					p++;
+				exponent2_len = p - exponent2;	// same problem with unterminated exponent
 				if (*p != '+' && *p != '-')		// must be plus or minus
 					goto errexpr;
 				dnflag = *p;					// dnflag = sign
-				p2 = addin;
-				*p2++ = *p++;					// copy the sign
+				addin = p;
+				p++;							// copy the sign
 				if (!isdigit(*p))
 					goto errexpr;
 				while (isdigit(*p))				// copy the c value
-					*p2++ = *p++; 
+					p++;
+				if (*p != '\0')
+					goto errexpr;
 			}
-			*p2 = '\0';
+			else {
+				goto errexpr;
+			}
 DIGITSONLY:
 			in = fopen ("$temp.npg", "w");	// open the temporary input file
 			if ((dnflag == '+') || (dnflag == '-')) {
 				fprintf (in, "ABC $a^$b-$a^$c$d\n");// write ABC header and data
-				fprintf (in, "%s %s %s %s\n", base, exponent, exponent2, addin);
+				fprintf (in, "%s %.*s %.*s %s\n", base, exponent_len, exponent, exponent2_len, exponent2, addin);
 			}
 			else {
 				fprintf (in, "ABC $a*$b^$c$d\n");// write ABC header and data
-				fprintf (in, "%s %s %s %s\n", multiplier, base, exponent, addin);
+				fprintf (in, "%s %s %.*s %s\n", multiplier, base, exponent_len, exponent, addin);
 			}
 			fclose (in);
 			strcpy (m_pgen_input, "$temp.npg");
 			strcpy (m_pgen_output, "$temp.res");
  			PROCESSFILE = 1;
 			SINGLETEST = 1;
+
+			free(orig_p);
 			break;
+		}
 
 /* -H - help */
 
