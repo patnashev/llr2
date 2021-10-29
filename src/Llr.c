@@ -281,7 +281,6 @@ int resn = 0, resnp = 0;
 char facnstr[80], facnpstr[80];
 char m_pgen_input[IBSIZE], m_pgen_output[IBSIZE], oldm_pgen_input[IBSIZE];
 char keywords[MAX_OPTIONS][IBSIZE], values[MAX_OPTIONS][IBSIZE];
-char multiplier[IBSIZE], base[IBSIZE], exponent[IBSIZE], exponent2[IBSIZE], addin[IBSIZE];
 char inifilebuf[IBSIZE];
 char sgd[sgkbufsize];
 char sgb[sgkbufsize];
