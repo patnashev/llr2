@@ -214,6 +214,13 @@ int main (
 	(void)signal(SIGTERM, sigterm_handler);
 	(void)signal(SIGINT, sigterm_handler);
 
+/* suppress assert() window */
+
+#if defined(_MSC_VER) && !defined(_DEBUG)
+    _set_error_mode(_OUT_TO_STDERR);
+    _set_abort_behavior(0, _CALL_REPORTFAULT);
+#endif
+
 /* Process command line switches */
 
 	for (i = 1; i < argc; i++) {

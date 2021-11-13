@@ -2,7 +2,7 @@
 | This file contains various utility routines that may be used by gwnum
 | routines, prime95, or other consumers of gwnum.
 | 
-|  Copyright 2004-2020 Mersenne Research, Inc.  All rights reserved.
+|  Copyright 2004-2021 Mersenne Research, Inc.  All rights reserved.
 +---------------------------------------------------------------------*/
 
 #ifndef _GWUTIL_H
@@ -17,12 +17,12 @@ extern "C" {
 
 /* Handy macros to improve readability */
 
-#define CONST_LOG2			0.69314718055994530941723212145818
-#define CONST_ONE_OVER_LOG2		1.4426950408889634073599246810019
-#define log2(n)				(log((double)(n)) * CONST_ONE_OVER_LOG2)
-#define log2f(n)			(logf((float)(n)) * (float) CONST_ONE_OVER_LOG2)
-#define logb(n)				(log((double)(n)) / log ((double)(b)))
-#define divide_rounding_up(a,b)		((a + (b) - 1) / (b))
+//These are now included in math.h
+//#define CONST_LOG2			0.69314718055994530941723212145818
+//#define CONST_ONE_OVER_LOG2		1.4426950408889634073599246810019
+//#define log2(n)			(log((double)(n)) * CONST_ONE_OVER_LOG2)
+//#define log2f(n)			(logf((float)(n)) * (float) CONST_ONE_OVER_LOG2)
+#define divide_rounding_up(a,b)		(((a) + (b) - 1) / (b))
 #define divide_rounding_down(a,b)	((a) / (b))
 #define round_up_to_multiple_of(a,b)	(divide_rounding_up (a, b) * (b))
 #define round_down_to_multiple_of(a,b)	(divide_rounding_down (a, b) * (b))
@@ -39,11 +39,7 @@ extern "C" {
 
 /* Align a pointer to the given boundary (boundary must be a power of 2) */
 
-#ifdef _WIN64
-#define align_ptr(p,n)	(void *) (((uint64_t)(p) + (n)-1) & ~((n)-1))
-#else
-#define align_ptr(p,n)	(void *) (((long)(p) + (n)-1) & ~((n)-1))
-#endif
+#define align_ptr(p,n)	(void *) (((intptr_t)(p) + (n)-1) & ~((n)-1))
 
 /* Aligned malloc routines.  MSVC 8 supports these in the C runtime library. */
 /* Emulate these routines for other ports. */
@@ -57,6 +53,9 @@ void  aligned_free (void *ptr);
 int large_pages_supported ();
 void * large_pages_malloc (size_t size);
 void large_pages_free (void *ptr);
+void * aligned_offset_large_pages_malloc (size_t size, size_t alignment, size_t mod);
+void * aligned_large_pages_malloc (size_t size, size_t alignment);
+void aligned_large_pages_free (void *ptr);
 
 /* Utility string routines */
 

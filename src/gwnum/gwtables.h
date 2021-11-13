@@ -2,7 +2,7 @@
 | This file contains various utility routines that may be used by gwnum
 | setup.
 |
-|  Copyright 2011-2020 Mersenne Research, Inc.  All rights reserved.
+|  Copyright 2011-2021 Mersenne Research, Inc.  All rights reserved.
 +---------------------------------------------------------------------*/
 
 #ifndef _GWTABLES_H
@@ -124,7 +124,7 @@ struct gwasm_data {
 	void	*sincos5;
 	gwthread hyperthread_id;	/* Thread ID of prefetching hyperthread */
 	gwevent hyperthread_work_to_do;	/* Event to signal hyperthread to begin prefetching */
-	void	*UNUSED_PTRS[1];
+	void	*SRC3ARG;		/* Function argument */
 	uint32_t *ASM_TIMERS;		/* Timers used for optimizing code */
 
 	uint32_t COPYZERO[8];		/* Offsets to help in gwcopyzero */
