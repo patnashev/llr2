@@ -7918,17 +7918,22 @@ int multipointPRP(
 	else
 	{
 		ultog(1, tmp2);
-        for (i = c - 1; i > 0; i--)
+        if ((i = abs(c - 1)) > 0)
         {
-            ulmulg(a, tmp);
-            if (tmp->sign > N->sign*2)
-                modg(N, tmp);
+            for (bit = 1; bit < i; bit <<= 1);
+            for (; bit > 0; bit >>= 1)
+            {
+                squareg(tmp2);
+                if (i & bit)
+                    ulmulg(a, tmp2);
+                if (tmp2->sign > N->sign)
+                    modg(N, tmp2);
+            }
         }
-        for (i = 1 - c; i > 0; i--)
+        if (c > 1)
         {
-            ulmulg(a, tmp2);
-            if (tmp2->sign > N->sign*2)
-                modg(N, tmp2);
+            mulg(tmp2, tmp);
+            ultog(1, tmp2);
         }
 		modg(N, tmp);			// External modulus and gwnum's one may be different...
 		modg(N, tmp2);			// External modulus and gwnum's one may be different...
