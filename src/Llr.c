@@ -7918,13 +7918,13 @@ int multipointPRP(
 	else
 	{
 		ultog(1, tmp2);
-        if ((i = abs(c - 1)) > 0)
+        if ((bits = abs(c - 1)) > 0)
         {
-            for (bit = 1; bit < i; bit <<= 1);
+            for (bit = 1; bit < bits; bit <<= 1);
             for (; bit > 0; bit >>= 1)
             {
                 squareg(tmp2);
-                if (i & bit)
+                if (bits & bit)
                     ulmulg(a, tmp2);
                 if (tmp2->sign > N->sign)
                     modg(N, tmp2);
@@ -7952,10 +7952,20 @@ int multipointPRP(
             else
                 sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
             sprintf(buf, "%s is not prime.  RES64: %s", str, res64);
-            if (c < 1 && tmp2->sign > 0)
+            if (c < 1 && tmp2->sign > 0) // Double check of the residue
             {
-                for (i = 1 - c; i > 0; i--)
-                    ulmulg(a, tmp);
+                ultog(1, tmp2);
+                bits = 1 - c;
+                for (bit = 1; bit < bits; bit <<= 1);
+                for (; bit > 0; bit >>= 1)
+                {
+                    squareg(tmp2);
+                    if (bits & bit)
+                        ulmulg(a, tmp2);
+                    if (tmp2->sign > N->sign)
+                        modg(N, tmp2);
+                }
+                mulg(tmp2, tmp);
                 modg(N, tmp);
                 if (gwtogiantVerbose(gwdata, x, tmp2) < 0) goto error;
                 modg(N, tmp2);
