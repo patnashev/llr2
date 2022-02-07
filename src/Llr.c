@@ -13605,7 +13605,7 @@ restart:
 	if (IniGetInt(INI_FILE, "LargePages", 0))
 		gwset_use_large_pages(gwdata);
 
-	gwsetmaxmulbyconst(gwdata, a);
+	gwsetmaxmulbyconst(gwdata, 1);
 
 	p = Nlen;
     total = n - 1;
@@ -13915,17 +13915,16 @@ restart:
             start_timer(1);
             care = TRUE;
             dbltogw(gwdata, (double)a, u0);
-            gwsetmulbyconst(gwdata, a);
+            dbltogw(gwdata, (double)a, x);
             bit = 1;
             while (bit < klen) {
-                if (bitval(gk, klen - bit - 1)) {
-                    gwsetnormroutine(gwdata, 0, 1, 1);
-                }
-                else {
-                    gwsetnormroutine(gwdata, 0, 1, 0);
-                }
                 gwsquare_carefully(gwdata, u0);
                 CHECK_IF_ANY_ERROR(u0, (bit), klen, 0);
+
+                if (bitval(gk, klen - bit - 1)) {
+                    gwmul_carefully(gwdata, x, u0);
+                    CHECK_IF_ANY_ERROR(u0, (bit), klen, 4);
+                }
                 bit++;
             }
             end_timer(1);
