@@ -13605,7 +13605,7 @@ restart:
 	if (IniGetInt(INI_FILE, "LargePages", 0))
 		gwset_use_large_pages(gwdata);
 
-	gwsetmaxmulbyconst(gwdata, 1);
+	//gwsetmaxmulbyconst(gwdata, 1);
 
 	p = Nlen;
     total = n - 1;
