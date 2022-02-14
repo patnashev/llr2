@@ -5733,6 +5733,517 @@ int DoAnyTest(struct KBNCTest *kbncTest)
     return DoTest(kbncTest->sk, kbncTest->sb, kbncTest->n, kbncTest->c, kbncTest->res64, kbncTest->cert64, NULL);
 }
 
+int DoErrorTests()
+{
+    IniWriteInt(INI_FILE, "Gerbicz", 1);
+    IniWriteInt(INI_FILE, "ProofCount", 4);
+    IniWriteString(INI_FILE, "ProofName", "error");
+    IniWriteString(INI_FILE, "RndSeed", NULL);
+
+    giant tmp = allocgiant(10000);
+    giant tmp2 = allocgiant(10000);
+    int res = FALSE;
+    unsigned long bit;
+    uint64_t testRes64;
+    uint64_t testCert64;
+    int a;
+    int i, j;
+
+    gwhandle* gwdata = (gwhandle*)malloc(sizeof(gwhandle));
+    gwnum x, y, z;
+
+    char* sgk = "3";
+    char* sgb = "2";
+    int k = 3;
+    int b = 2;
+    int n = 353;
+    int incr = 1;
+    int fingerprint = 1374435914;
+
+    ultog(k, tmp);
+    a = genProthBase(tmp, n);
+
+    PROOFMODE = SavePoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || !res)
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+
+    gwinit(gwdata);
+    gwsetup(gwdata, k, b, n, incr);
+    x = gwalloc(gwdata);
+    y = gwalloc(gwdata);
+    gw_random_number(gwdata, x);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.1", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.1", fingerprint, bit, y, NULL);
+    gwdone(gwdata);
+
+    PROOFMODE = CompressPoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || res)
+    {
+        TestOutput("Attack failed.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = BuildCert;
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("BuildCert failed.\n");
+        return FALSE;
+    }
+
+    ReadUInt64(cert64, &testCert64);
+
+    PROOFMODE = VerifyCert;
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyCert failed.\n");
+        return FALSE;
+    }
+    ReadUInt64(res64, &testRes64);
+    if (testRes64 == testCert64)
+    {
+        TestOutput("Certificate failure.\n");
+        return FALSE;
+    }
+
+
+    PROOFMODE = SavePoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || !res)
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+
+    gwinit(gwdata);
+    gwsetup(gwdata, k, b, n, incr);
+    x = gwalloc(gwdata);
+    dbltogw(gwdata, a, x);
+    for (i = 0; i < n; i++)
+        gwsquare(gwdata, x);
+    gwtogiant(gwdata, x, tmp);
+    y = gwalloc(gwdata);
+    gwcopy(gwdata, x, y);
+    gwsquare(gwdata, y);
+    gwmul(gwdata, x, y);
+    gwtogiant(gwdata, y, tmp);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.4", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    gwsquare(gwdata, x);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.1", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.1", fingerprint, bit, y, NULL);
+    gwdone(gwdata);
+
+    PROOFMODE = CompressPoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || res)
+    {
+        TestOutput("Attack failed.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = BuildCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    IniWriteInt(INI_FILE, "CheckRoots", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("BuildCert failed.\n");
+        return FALSE;
+    }
+
+    ReadUInt64(cert64, &testCert64);
+
+    PROOFMODE = VerifyCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyCert failed.\n");
+        return FALSE;
+    }
+    ReadUInt64(res64, &testRes64);
+    if (testRes64 != testCert64)
+    {
+        TestOutput("Certificate mismatch.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = VerifyRes;
+    IniWriteInt(INI_FILE, "CheckRoots", 1);
+    resetTest();
+    if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyRes failed to detect the attack.\n");
+        return FALSE;
+    }
+    _unlink("error.0");
+    _unlink("error.4");
+    
+
+    PROOFMODE = SavePoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || !res)
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+
+    gwinit(gwdata);
+    gwsetup(gwdata, k, b, n, incr);
+    x = gwalloc(gwdata);
+    ultog(a, tmp);
+    power(tmp, k);
+    gianttogw(gwdata, tmp, x);
+    for (i = 0; i < n - 100; i++)
+        gwsquare(gwdata, x);
+    y = gwalloc(gwdata);
+    z = gwalloc(gwdata);
+    gwtogiant(gwdata, x, tmp);
+    while (!isone(tmp))
+    {
+        gwcopy(gwdata, y, z);
+        gwcopy(gwdata, x, y);
+        gwsquare(gwdata, x);
+        gwtogiant(gwdata, x, tmp);
+    }
+    gwtogiant(gwdata, z, tmp);
+    gwcopy(gwdata, z, x);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.4", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.2", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.2", fingerprint, bit, y, NULL);
+    gwdone(gwdata);
+
+    PROOFMODE = CompressPoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || res)
+    {
+        TestOutput("Attack failed.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = BuildCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    IniWriteInt(INI_FILE, "CheckRoots", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("BuildCert failed.\n");
+        return FALSE;
+    }
+
+    ReadUInt64(cert64, &testCert64);
+
+    PROOFMODE = VerifyCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyCert failed.\n");
+        return FALSE;
+    }
+    ReadUInt64(res64, &testRes64);
+    if (testRes64 != testCert64)
+    {
+        TestOutput("Certificate mismatch.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = VerifyRes;
+    IniWriteInt(INI_FILE, "CheckRoots", 1);
+    resetTest();
+    if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyRes failed to detect the attack.\n");
+        return FALSE;
+    }
+    _unlink("error.0");
+    _unlink("error.4");
+    
+
+    sgk = "1";
+    sgb = "960";
+    k = 1;
+    b = 960;
+    n = 128;
+    incr = 1;
+    fingerprint = 3048892211;
+
+    a = 3;
+
+    PROOFMODE = SavePoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    IniWriteInt(INI_FILE, "GerbiczL", 4);
+    IniWriteInt(INI_FILE, "GerbiczL2", 32);
+    IniWriteInt(INI_FILE, "AtnashevM", 32);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || !res)
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+
+    gwinit(gwdata);
+    gwsetup(gwdata, k, b, n, incr);
+    x = gwalloc(gwdata);
+    dbltogw(gwdata, a, x);
+    gwsetmulbyconst(gwdata, a);
+    ultog(b/3, tmp);
+    power(tmp, n);
+    ultog(3, tmp2);
+    power(tmp2, n - 20);
+    mulg(tmp2, tmp);
+    j = bitlen(tmp);
+    for (i = 1; i < j; i++)
+    {
+        if (bitval(tmp, j - i - 1)) {
+            gwsetnormroutine(gwdata, 0, 1, 1);
+        }
+        else {
+            gwsetnormroutine(gwdata, 0, 1, 0);
+        }
+        gwsquare(gwdata, x);
+    }
+    gwsetnormroutine(gwdata, 0, 1, 0);
+    y = gwalloc(gwdata);
+    z = gwalloc(gwdata);
+    gwtogiant(gwdata, x, tmp);
+    while (!isone(tmp))
+    {
+        gwcopy(gwdata, y, z);
+        gwcopy(gwdata, x, y);
+        gwsquare(gwdata, x);
+        gwmul(gwdata, y, x);
+        gwtogiant(gwdata, x, tmp);
+    }
+    gwcopy(gwdata, z, x);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.4", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    gwsquare(gwdata, x);
+    gwsquare(gwdata, x);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.3", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.3", fingerprint, bit, y, NULL);
+    gwdone(gwdata);
+
+    PROOFMODE = CompressPoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || res)
+    {
+        TestOutput("Attack failed.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = BuildCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    IniWriteInt(INI_FILE, "CheckRoots", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("BuildCert failed.\n");
+        return FALSE;
+    }
+
+    ReadUInt64(cert64, &testCert64);
+
+    PROOFMODE = VerifyCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyCert failed.\n");
+        return FALSE;
+    }
+    ReadUInt64(res64, &testRes64);
+    if (testRes64 != testCert64)
+    {
+        TestOutput("Certificate mismatch.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = VerifyRes;
+    IniWriteInt(INI_FILE, "CheckRoots", 1);
+    resetTest();
+    if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyRes failed to detect the attack.\n");
+        return FALSE;
+    }
+    _unlink("error.0");
+    _unlink("error.4");
+    IniWriteString(INI_FILE, "GerbiczL", NULL);
+    IniWriteString(INI_FILE, "GerbiczL2", NULL);
+    IniWriteString(INI_FILE, "AtnashevM", NULL);
+
+    sgk = "2";
+    sgb = "5";
+    k = 2;
+    b = 5;
+    n = 178;
+    incr = -1;
+    fingerprint = 1967257975;
+
+    a = 2;
+
+    PROOFMODE = SavePoints;
+    IniWriteInt(INI_FILE, "ProofCount", 4);
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || !res)
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+
+    gwinit(gwdata);
+    gwsetup(gwdata, k, b, n, incr);
+    x = gwalloc(gwdata);
+    dbltogw(gwdata, a, x);
+    gwsetmulbyconst(gwdata, a);
+    ultog(b, tmp);
+    power(tmp, n);
+    ulmulg(k, tmp);
+    iaddg(incr, tmp);
+    iaddg(-1, tmp);
+    uldivg(3, tmp);
+    j = bitlen(tmp);
+    for (i = 1; i < j; i++)
+    {
+        if (bitval(tmp, j - i - 1)) {
+            gwsetnormroutine(gwdata, 0, 1, 1);
+        }
+        else {
+            gwsetnormroutine(gwdata, 0, 1, 0);
+        }
+        gwsquare(gwdata, x);
+    }
+    gwsetnormroutine(gwdata, 0, 1, 0);
+    y = gwalloc(gwdata);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.4", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.3", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.3", fingerprint, bit, y, NULL);
+    gwsquare(gwdata, x);
+    if (!readFromFile(gwdata, &gwdata->gdata, "error.2", fingerprint, &bit, y, NULL))
+    {
+        TestOutput("Test failed.\n");
+        return FALSE;
+    }
+    gwmul(gwdata, x, y);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error.2", fingerprint, bit, y, NULL);
+    gwdone(gwdata);
+
+    PROOFMODE = CompressPoints;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res) || res)
+    {
+        TestOutput("Attack failed.\n");
+        return FALSE;
+    }
+    
+    PROOFMODE = BuildCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 0);
+    IniWriteInt(INI_FILE, "CheckRoots", 0);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("BuildCert failed.\n");
+        return FALSE;
+    }
+
+    ReadUInt64(cert64, &testCert64);
+
+    PROOFMODE = VerifyCert;
+    IniWriteInt(INI_FILE, "DeletePoints", 1);
+    resetTest();
+    if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyCert failed.\n");
+        return FALSE;
+    }
+    ReadUInt64(res64, &testRes64);
+    if (testRes64 != testCert64)
+    {
+        TestOutput("Certificate mismatch.\n");
+        return FALSE;
+    }
+
+    PROOFMODE = VerifyRes;
+    IniWriteInt(INI_FILE, "CheckRoots", 1);
+    resetTest();
+    if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
+    {
+        TestOutput("VerifyRes failed to detect the attack.\n");
+        return FALSE;
+    }
+    _unlink("error.0");
+    _unlink("error.4");
+
+    free(gwdata);
+    free(tmp2);
+    free(tmp);
+    return TRUE;
+}
+
 int DoTestSubset(char *subset)
 {
     struct KNTest *knTest;
@@ -5793,6 +6304,13 @@ int DoTestSubset(char *subset)
         for (kbncTest = TestPrime; kbncTest->n != 0; kbncTest++)
             if (!DoAnyTest(kbncTest))
                 return FALSE;
+    }
+
+    if (!strcmp(subset, "all") || !strcmp(subset, "error"))
+    {
+        TestOutput("Running tests with errors.\n");
+        if (!DoErrorTests())
+            return FALSE;
     }
 
     if (!strcmp(subset, "slow") || !strcmp(subset, "gfn13more"))
@@ -5903,7 +6421,7 @@ void DoTests()
     {
         printf("Usage: llr2 {-oGerbicz=1 | -pFullTest} test[=subset]\n");
         printf("Subsets:\n");
-        printf("\tall = 321plus + 321minus + b5plus + b5minus + gfn13 + special + prime\n");
+        printf("\tall = 321plus + 321minus + b5plus + b5minus + gfn13 + special + prime + error\n");
         printf("\tslow = gfn13more + 100186b5minus + 109208b5plus\n");
         printf("\trandom\n");
         return;
