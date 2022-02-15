@@ -6298,19 +6298,19 @@ int DoTestSubset(char *subset)
                 return FALSE;
     }
 
+    if (!strcmp(subset, "all") || !strcmp(subset, "error"))
+    {
+        TestOutput("Running tests with errors.\n");
+        if (!DoErrorTests())
+            return FALSE;
+    }
+
     if (!strcmp(subset, "all") || !strcmp(subset, "prime"))
     {
         TestOutput("Running prime tests.\n");
         for (kbncTest = TestPrime; kbncTest->n != 0; kbncTest++)
             if (!DoAnyTest(kbncTest))
                 return FALSE;
-    }
-
-    if (!strcmp(subset, "all") || !strcmp(subset, "error"))
-    {
-        TestOutput("Running tests with errors.\n");
-        if (!DoErrorTests())
-            return FALSE;
     }
 
     if (!strcmp(subset, "slow") || !strcmp(subset, "gfn13more"))
@@ -6421,7 +6421,7 @@ void DoTests()
     {
         printf("Usage: llr2 {-oGerbicz=1 | -pFullTest} test[=subset]\n");
         printf("Subsets:\n");
-        printf("\tall = 321plus + 321minus + b5plus + b5minus + gfn13 + special + prime + error\n");
+        printf("\tall = 321plus + 321minus + b5plus + b5minus + gfn13 + special + error + prime\n");
         printf("\tslow = gfn13more + 100186b5minus + 109208b5plus\n");
         printf("\trandom\n");
         return;
