@@ -7917,7 +7917,8 @@ int multipointPRP(
 	}
 	else
 	{
-		ultog(1, tmp2);
+        gwcopy(gwdata, x, u0);
+        ultog(1, tmp2);
         if ((bits = abs(c - 1)) > 0)
         {
             for (bit = 1; bit < bits; bit <<= 1);
@@ -7932,7 +7933,9 @@ int multipointPRP(
         }
         if (c > 1)
         {
-            mulg(tmp2, tmp);
+            gianttogw(gwdata, tmp2, d);
+            gwmul_carefully(gwdata, d, u0);
+            if (gwtogiantVerbose(gwdata, u0, tmp) < 0) goto error;
             ultog(1, tmp2);
         }
 		modg(N, tmp);			// External modulus and gwnum's one may be different...
@@ -7942,9 +7945,22 @@ int multipointPRP(
 			if (c < 1)
 			{
 				invg(N, tmp2);
-				mulg(tmp2, tmp);
-				modg(N, tmp);
-			}
+                if (tmp2->sign > 0)
+                {
+                    gianttogw(gwdata, tmp2, d);
+                    gwmul_carefully(gwdata, d, u0);
+                    if (gwtogiantVerbose(gwdata, u0, tmp) < 0) goto error;
+                }
+                else
+                {
+                    tmp2->sign *= -1;
+                    gtoc(tmp2, buf + 100, sgkbufsize);
+                    sprintf(buf, "%s is not prime, divisible by %s.\n", str, buf + 100);
+                    OutputBoth(buf);
+                    retval = FALSE;
+                    goto cleanup;
+                }
+            }
             if (tmp->sign == 0)
                 sprintf(res64, "%08lX%08lX", (unsigned long)0, (unsigned long)0);
             else if (abs(tmp->sign) < 2)	// make a 32 bit residue correct !!
@@ -7952,10 +7968,11 @@ int multipointPRP(
             else
                 sprintf(res64, "%08lX%08lX", (unsigned long)tmp->n[1], (unsigned long)tmp->n[0]);
             sprintf(buf, "%s is not prime.  RES64: %s", str, res64);
-            if (c < 1 && tmp2->sign > 0) // Double check of the residue
+
+            // Double check of the residue
+            if (c != 1)
             {
                 ultog(1, tmp2);
-                bits = 1 - c;
                 for (bit = 1; bit < bits; bit <<= 1);
                 for (; bit > 0; bit >>= 1)
                 {
@@ -7965,10 +7982,22 @@ int multipointPRP(
                     if (tmp2->sign > N->sign)
                         modg(N, tmp2);
                 }
-                mulg(tmp2, tmp);
-                modg(N, tmp);
-                if (gwtogiantVerbose(gwdata, x, tmp2) < 0) goto error;
-                modg(N, tmp2);
+                if (c > 1)
+                {
+                    if (gwtogiantVerbose(gwdata, x, tmp) < 0) goto error;
+                    mulg(tmp2, tmp);
+                    modg(N, tmp);
+                    if (gwtogiantVerbose(gwdata, u0, tmp2) < 0) goto error;
+                    modg(N, tmp2);
+                }
+                if (c < 1)
+                {
+                    if (gwtogiantVerbose(gwdata, u0, tmp) < 0) goto error;
+                    mulg(tmp2, tmp);
+                    modg(N, tmp);
+                    if (gwtogiantVerbose(gwdata, x, tmp2) < 0) goto error;
+                    modg(N, tmp2);
+                }
                 if (gcompg(tmp, tmp2) != 0)
                 {
                     sprintf(buf, RESIDUEERR);
@@ -7977,8 +8006,6 @@ int multipointPRP(
                     goto error;
                 }
             }
-            if (c < 1 && tmp2->sign <= 0)
-                sprintf(buf, "%s is divisible by a.", str);
 		}
 		else {
 			sprintf(buf, "%s is base %d-Fermat PRP! (%lu decimal digits)", str, a, nbdg);
@@ -7998,19 +8025,11 @@ int multipointPRP(
 
         if (!*res && PROOFMODE == VerifyRes && IniGetInt(INI_FILE, "CheckRoots", 0))
         {
-            if (c == 1 && !checkRootsPlus(gb, iters*L/explen, gwdata, u0, x, tmp))
+            if ((c == 1 && !checkRootsPlus(gb, iters*L/explen, gwdata, u0, x, tmp)) ||
+                (c != 1 && !checkRootsMinus(gb, n, c - 1, gwdata, x, u0, tmp)))
             {
                 retval = FALSE;
                 goto cleanup;
-            }
-            if (c != 1)
-            {
-                gianttogw(gwdata, tmp, x);
-                if (!checkRootsMinus(gb, n, c - 1, gwdata, u0, x, tmp))
-                {
-                    retval = FALSE;
-                    goto cleanup;
-                }
             }
         }
     }
