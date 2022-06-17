@@ -6241,6 +6241,7 @@ int DoErrorTests()
     free(gwdata);
     free(tmp2);
     free(tmp);
+    IniWriteString(INI_FILE, "ProofName", NULL);
     return TRUE;
 }
 

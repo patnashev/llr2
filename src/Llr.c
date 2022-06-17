@@ -12508,11 +12508,11 @@ LLRCONTINUE:
 								// We have better to do ad first a PRP test.
 // Lei
 // Lei shadow   retval = isPRPinternal (str, dk, 2, n, -1, res);
-		strcpy (buf, str);
-		if ((format == ABCDN) || (format == ABCDNG))
-			sprintf (str, "%lu^%lu-%lu^%lu-1", binput, ninput+ndiff, binput, ninput);
-		else
-			sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');     // Number N to test, as a string
+		//strcpy (buf, str);
+		//if ((format == ABCDN) || (format == ABCDNG))
+		//	sprintf (str, "%lu^%lu-%lu^%lu-1", binput, ninput+ndiff, binput, ninput);
+		//else
+		//	sprintf (str, "%s*%lu^%lu%c1", sgk, binput, ninput, '-');     // Number N to test, as a string
 		Fermat_only = TRUE;
 #define gswap(p,q)  {giant tgq; tgq = *(p); *(p) = *(q); *(q) = tgq;}
         if (b_else != 1)
@@ -12534,7 +12534,7 @@ LLRCONTINUE:
 			return retval;
 		}
 		IniWriteInt(INI_FILE, "PRPdone", 1);
-		strcpy (str, buf);	// Lei
+		//strcpy (str, buf);	// Lei
         if (b_else != 1)
             gswap(&gk1, &gk);
 	}
@@ -13624,7 +13624,7 @@ restart:
 	if (IniGetInt(INI_FILE, "LargePages", 0))
 		gwset_use_large_pages(gwdata);
 
-	//gwsetmaxmulbyconst(gwdata, 1);
+	gwsetmaxmulbyconst(gwdata, 1);
 
 	p = Nlen;
     total = n - 1;
