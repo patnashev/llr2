@@ -9038,6 +9038,7 @@ restart:
 		gwinit (gwdata);
 		gdata = &gwdata->gdata;
  		gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
+        gwset_use_spin_wait(gwdata, IniGetInt(INI_FILE, "SpinThreads", 1));
         if (IniGetInt(INI_FILE, "LargePages", 0))
             gwset_use_large_pages(gwdata);
 		gwset_larger_fftlen_count(gwdata, (char)IniGetInt(INI_FILE, "FFT_Increment", 0));
@@ -9509,6 +9510,9 @@ restart:
 		gwinit (gwdata);
 		gdata = &gwdata->gdata;
  		gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
+        gwset_use_spin_wait(gwdata, IniGetInt(INI_FILE, "SpinThreads", 1));
+        if (IniGetInt(INI_FILE, "LargePages", 0))
+            gwset_use_large_pages(gwdata);
 		gwset_larger_fftlen_count(gwdata, (char)IniGetInt(INI_FILE, "FFT_Increment", 0));
 		gwsetmaxmulbyconst (gwdata, a);
 		if (!setupok (gwdata, gwsetup_general_mod_giant (gwdata, N))) {
@@ -11395,7 +11399,7 @@ int plusminustest (
 
 PLMCONTINUE:
 
-	if (klen > Nlen || IniGetInt(INI_FILE, "Gerbicz", 0)) {
+	if (klen > Nlen || (!setuponly && IniGetInt(INI_FILE, "Gerbicz", 0))) {
 		if (klen > Nlen)
 		{
 			if ((gformat == ABCDN) || (gformat == ABCDNG))
@@ -11536,8 +11540,11 @@ PLMCONTINUE:
 	gwinit (gwdata);
 	gdata = &gwdata->gdata;
  	gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
-	if (IniGetInt(INI_FILE, "LargePages", 0))
-		gwset_use_large_pages(gwdata);
+    gwset_use_spin_wait(gwdata, IniGetInt(INI_FILE, "SpinThreads", 1));
+    if (IniGetInt(INI_FILE, "LargePages", 0))
+        gwset_use_large_pages(gwdata);
+    if (setuponly)
+        gwset_information_only(gwdata);
 
 	*res = TRUE;
 
@@ -11684,9 +11691,9 @@ PLMCONTINUE:
 		OutputStr (buf);
 		if (verbose || restarting)
 			writeError (buf);	
-		}
 		bit = 1;
 		dbltogw (gwdata, (double)a, x);
+		}
 	}
 
 /* Get the current time */
@@ -12561,8 +12568,11 @@ restart:
 	gwinit (gwdata);
 	gdata = &gwdata->gdata;
  	gwset_num_threads (gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
-	if (IniGetInt(INI_FILE, "LargePages", 0))
-		gwset_use_large_pages(gwdata);
+    gwset_use_spin_wait(gwdata, IniGetInt(INI_FILE, "SpinThreads", 1));
+    if (IniGetInt(INI_FILE, "LargePages", 0))
+        gwset_use_large_pages(gwdata);
+    if (setuponly)
+        gwset_information_only(gwdata);
 
 	vindex = 1;					// First attempt
 
@@ -13621,8 +13631,11 @@ restart:
 	gwinit(gwdata);
 	gdata = &gwdata->gdata;
 	gwset_num_threads(gwdata, IniGetInt(INI_FILE, "ThreadsPerTest", 1));
-	if (IniGetInt(INI_FILE, "LargePages", 0))
-		gwset_use_large_pages(gwdata);
+    gwset_use_spin_wait(gwdata, IniGetInt(INI_FILE, "SpinThreads", 1));
+    if (IniGetInt(INI_FILE, "LargePages", 0))
+        gwset_use_large_pages(gwdata);
+    if (setuponly)
+        gwset_information_only(gwdata);
 
 	gwsetmaxmulbyconst(gwdata, 1);
 

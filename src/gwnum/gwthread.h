@@ -8,11 +8,11 @@
 | multiplications.  However, you can use these routines without using
 | the rest of the gwnum package if you so desire.
 |
-| NOTE:  MFC users may not be able to use the thread creation routines as
+| NOTE:  MFC users may not be able to use the thread creation routines
 | because we call the C runtime library thread create rather than the
 | MFC thread create routine. 
 |
-|  Copyright 2006 Mersenne Research, Inc.  All rights reserved.
+|  Copyright 2006-2022 Mersenne Research, Inc.  All rights reserved.
 +---------------------------------------------------------------------*/
 
 #ifndef _GWTHREAD_H
@@ -26,15 +26,42 @@ extern "C" {
 #endif
 
 /******************************************************************************
+*                            Atomic Int Routines                              *
+******************************************************************************/
+
+// Hack to workaround MSVC's appalling lack of support for atomics in C, gcc 4.8's missing stdatomic.h, and gcc 8's inability to mix _Atomic in C++ code.
+// Instead we use C++11 std::atomic in gwthread.cpp and export the few routines we need in a simple C interface.
+
+typedef void *gwatomic;			/* Definition of an atomic int */
+
+#define atomic_set(x,v)		gwatomic_set(&(x), v)				// Equivalent to x = v
+#define atomic_get(x)		gwatomic_get(&(x))				// Equivalent to x
+#define atomic_incr(x)		((void) gwatomic_fetch_increment(&(x)))		// Increment x, do not return a value
+#define atomic_decr(x)		((void) gwatomic_fetch_decrement(&(x)))		// Decrement x, do not return a value
+#define atomic_fetch_incr(x)	(gwatomic_fetch_increment(&(x)))		// Equivalent to x++
+#define atomic_incr_fetch(x)	(gwatomic_fetch_increment(&(x)) + 1)		// Equivalent to ++x
+#define atomic_fetch_decr(x)	(gwatomic_fetch_decrement(&(x)))		// Equivalent to x--
+#define atomic_decr_fetch(x)	(gwatomic_fetch_decrement(&(x)) - 1)		// Equivalent to --x
+#define atomic_fetch_addin(x,v)	(gwatomic_fetch_add(&(x), v))			// Equivalent to { tmp = x; x += v; return (x); }
+#define atomic_spinwait(x,v)	gwatomic_spinwait(&(x), v)			// Equivalent to while (x != v)
+
+void gwatomic_set (gwatomic *x, int val);
+int gwatomic_get (gwatomic *x);
+int gwatomic_fetch_increment (gwatomic *x);
+int gwatomic_fetch_decrement (gwatomic *x);
+int gwatomic_fetch_add (gwatomic *x, int val);
+void gwatomic_spinwait (gwatomic *x, int val);
+
+/******************************************************************************
 *                         Mutex and Events Routines                           *
 ******************************************************************************/
 
 typedef void *gwmutex;			/* Definition of a mutex */
 
 void gwmutex_init (gwmutex *mutex);	/* Mutex to init */
-void gwmutex_lock (gwmutex *mutex);	/* Mutex to lock */
-void gwmutex_unlock (gwmutex *mutex);	/* Mutex to unlock */
-void gwmutex_destroy (gwmutex *mutex);	/* Mutex to destroy */
+void gwmutex_lock (gwmutex *mutex);	/* Mutex to lock.  This is a no-op if *mutex is null. */
+void gwmutex_unlock (gwmutex *mutex);	/* Mutex to unlock.  This is a no-op if *mutex is null. */
+void gwmutex_destroy (gwmutex *mutex);	/* Mutex to destroy.  This is a no-op if *mutex is null. */
 
 typedef void *gwevent;			/* Definition of an event handle */
 
@@ -53,9 +80,8 @@ void gwevent_destroy (gwevent *event);	/* Event to destroy */
 typedef void *gwthread;			/* Definition of a thread handle */
 
 void gwthread_create (gwthread *thread_id, void (*thread_proc)(void *), void *arg);
-void gwthread_create_waitable (gwthread *thread_id, void (*thread_proc)(void *),	void *arg);
+void gwthread_create_waitable (gwthread *thread_id, void (*thread_proc)(void *), void *arg);
 void gwthread_wait_for_exit (gwthread *thread_id);
-void gwthread_kill (gwthread *thread_id);
 
 #ifdef __cplusplus
 }
