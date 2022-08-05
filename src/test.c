@@ -5735,6 +5735,13 @@ int DoAnyTest(struct KBNCTest *kbncTest)
 
 int DoErrorTests()
 {
+    enum ProofModeEnum backupProof = PROOFMODE;
+    int backupGerbicz = IniGetInt(INI_FILE, "Gerbicz", -1);
+    int backupProofCount = IniGetInt(INI_FILE, "ProofCount", -1);
+    char backupProofName[64];
+    IniGetString(INI_FILE, "ProofName", backupProofName, 64, "");
+    char backupRndSeed[64];
+    IniGetString(INI_FILE, "RndSeed", backupRndSeed, 64, "");
     IniWriteInt(INI_FILE, "Gerbicz", 1);
     IniWriteInt(INI_FILE, "ProofCount", 4);
     IniWriteString(INI_FILE, "ProofName", "error");
@@ -6241,7 +6248,20 @@ int DoErrorTests()
     free(gwdata);
     free(tmp2);
     free(tmp);
+
+    PROOFMODE = backupProof;
+    IniWriteString(INI_FILE, "Gerbicz", NULL);
+    IniWriteString(INI_FILE, "ProofCount", NULL);
     IniWriteString(INI_FILE, "ProofName", NULL);
+    if (backupGerbicz >= 0)
+        IniWriteInt(INI_FILE, "Gerbicz", backupGerbicz);
+    if (backupProofCount >= 0)
+        IniWriteInt(INI_FILE, "ProofCount", backupProofCount);
+    if (backupProofName[0])
+        IniWriteInt(INI_FILE, "ProofName", backupProofName);
+    if (backupRndSeed[0])
+        IniWriteInt(INI_FILE, "RndSeed", backupRndSeed);
+
     return TRUE;
 }
 
