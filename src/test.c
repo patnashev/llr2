@@ -5855,6 +5855,7 @@ int DoErrorTests()
     }
     gwmul(gwdata, x, y);
     writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error_check.4", fingerprint, bit, y, NULL);
     gwsquare(gwdata, x);
     if (!readFromFile(gwdata, &gwdata->gdata, "error.1", fingerprint, &bit, y, NULL))
     {
@@ -5875,7 +5876,6 @@ int DoErrorTests()
     }
 
     PROOFMODE = BuildCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 0);
     IniWriteInt(INI_FILE, "CheckRoots", 0);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -5887,7 +5887,6 @@ int DoErrorTests()
     ReadUInt64(cert64, &testCert64);
 
     PROOFMODE = VerifyCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 1);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
     {
@@ -5902,6 +5901,7 @@ int DoErrorTests()
     }
 
     PROOFMODE = VerifyRes;
+    IniWriteString(INI_FILE, "ProofName", "error_check");
     IniWriteInt(INI_FILE, "CheckRoots", 1);
     resetTest();
     if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -5909,8 +5909,7 @@ int DoErrorTests()
         TestOutput("VerifyRes failed to detect the attack.\n");
         return FALSE;
     }
-    _unlink("error.0");
-    _unlink("error.4");
+    IniWriteString(INI_FILE, "ProofName", "error");
     
 
     PROOFMODE = SavePoints;
@@ -5949,6 +5948,7 @@ int DoErrorTests()
     }
     gwmul(gwdata, x, y);
     writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error_check.4", fingerprint, bit, y, NULL);
     if (!readFromFile(gwdata, &gwdata->gdata, "error.2", fingerprint, &bit, y, NULL))
     {
         TestOutput("Test failed.\n");
@@ -5968,7 +5968,6 @@ int DoErrorTests()
     }
 
     PROOFMODE = BuildCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 0);
     IniWriteInt(INI_FILE, "CheckRoots", 0);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -5980,7 +5979,6 @@ int DoErrorTests()
     ReadUInt64(cert64, &testCert64);
 
     PROOFMODE = VerifyCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 1);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
     {
@@ -5995,6 +5993,7 @@ int DoErrorTests()
     }
 
     PROOFMODE = VerifyRes;
+    IniWriteString(INI_FILE, "ProofName", "error_check");
     IniWriteInt(INI_FILE, "CheckRoots", 1);
     resetTest();
     if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -6002,9 +6001,8 @@ int DoErrorTests()
         TestOutput("VerifyRes failed to detect the attack.\n");
         return FALSE;
     }
-    _unlink("error.0");
-    _unlink("error.4");
-    
+    IniWriteString(INI_FILE, "ProofName", "error");
+
 
     sgk = "1";
     sgb = "960";
@@ -6069,6 +6067,7 @@ int DoErrorTests()
     }
     gwmul(gwdata, x, y);
     writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error_check.4", fingerprint, bit, y, NULL);
     gwsquare(gwdata, x);
     gwsquare(gwdata, x);
     if (!readFromFile(gwdata, &gwdata->gdata, "error.3", fingerprint, &bit, y, NULL))
@@ -6090,7 +6089,6 @@ int DoErrorTests()
     }
 
     PROOFMODE = BuildCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 0);
     IniWriteInt(INI_FILE, "CheckRoots", 0);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -6102,7 +6100,6 @@ int DoErrorTests()
     ReadUInt64(cert64, &testCert64);
 
     PROOFMODE = VerifyCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 1);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
     {
@@ -6117,6 +6114,7 @@ int DoErrorTests()
     }
 
     PROOFMODE = VerifyRes;
+    IniWriteString(INI_FILE, "ProofName", "error_check");
     IniWriteInt(INI_FILE, "CheckRoots", 1);
     resetTest();
     if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -6124,8 +6122,7 @@ int DoErrorTests()
         TestOutput("VerifyRes failed to detect the attack.\n");
         return FALSE;
     }
-    _unlink("error.0");
-    _unlink("error.4");
+    IniWriteString(INI_FILE, "ProofName", "error");
     IniWriteString(INI_FILE, "GerbiczL", NULL);
     IniWriteString(INI_FILE, "GerbiczL2", NULL);
     IniWriteString(INI_FILE, "AtnashevM", NULL);
@@ -6181,6 +6178,7 @@ int DoErrorTests()
     }
     gwmul(gwdata, x, y);
     writeToFileMD5(gwdata, &gwdata->gdata, "error.4", fingerprint, bit, y, NULL);
+    writeToFileMD5(gwdata, &gwdata->gdata, "error_check.4", fingerprint, bit, y, NULL);
     if (!readFromFile(gwdata, &gwdata->gdata, "error.3", fingerprint, &bit, y, NULL))
     {
         TestOutput("Test failed.\n");
@@ -6208,7 +6206,6 @@ int DoErrorTests()
     }
     
     PROOFMODE = BuildCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 0);
     IniWriteInt(INI_FILE, "CheckRoots", 0);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -6220,7 +6217,6 @@ int DoErrorTests()
     ReadUInt64(cert64, &testCert64);
 
     PROOFMODE = VerifyCert;
-    IniWriteInt(INI_FILE, "DeletePoints", 1);
     resetTest();
     if (!process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
     {
@@ -6235,6 +6231,7 @@ int DoErrorTests()
     }
 
     PROOFMODE = VerifyRes;
+    IniWriteString(INI_FILE, "ProofName", "error_check");
     IniWriteInt(INI_FILE, "CheckRoots", 1);
     resetTest();
     if (process_num(ABCVARAS, sgk, sgb, n, incr, 0, &res))
@@ -6242,9 +6239,9 @@ int DoErrorTests()
         TestOutput("VerifyRes failed to detect the attack.\n");
         return FALSE;
     }
-    _unlink("error.0");
-    _unlink("error.4");
 
+    _unlink("error_check.4");
+    _unlink("error_check.4.md5");
     free(gwdata);
     free(tmp2);
     free(tmp);
