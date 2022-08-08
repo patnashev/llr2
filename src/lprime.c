@@ -7,7 +7,7 @@
 /* Include files */
 
 #ifdef __FreeBSD__
-/* FreeBSD needs to process sys/types.h before it can understand either
+/* FreeBSD needs to process sys/types.h before it can understand either */
 /* sys/time.h or sys/resource.h */
 #include <sys/types.h>
 #endif

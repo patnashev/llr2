@@ -6255,9 +6255,9 @@ int DoErrorTests()
     if (backupProofCount >= 0)
         IniWriteInt(INI_FILE, "ProofCount", backupProofCount);
     if (backupProofName[0])
-        IniWriteInt(INI_FILE, "ProofName", backupProofName);
+        IniWriteString(INI_FILE, "ProofName", backupProofName);
     if (backupRndSeed[0])
-        IniWriteInt(INI_FILE, "RndSeed", backupRndSeed);
+        IniWriteString(INI_FILE, "RndSeed", backupRndSeed);
 
     return TRUE;
 }
