@@ -657,7 +657,7 @@ unsigned long gwmemused (gwhandle *);
 #define squaremuladd_safe(h,adds1,adds2,adds3,adds4)	((h)->EXTRA_BITS >= mma5_sqr_penalty+numadds_to_eb(mma5_sqr_pair(adds1)+mma5_mul_pair(adds3,adds4)+2))
 #define mulsquareadd_safe(h,adds1,adds2,adds3,adds4)	squaremuladd_safe(h,adds3,adds4,adds1,adds2)
 #define squaresquareadd_safe(h,adds1,adds2,adds3,adds4)	((h)->EXTRA_BITS >= mma5_sqr_penalty+numadds_to_eb(mma5_sqr_pair(adds1)+mma5_sqr_pair(adds3)+3))
-#define mma5_mul_pair(adds1,adds2)			((adds1) + (adds2) + ((adds1) != 0 && (adds2) != 0) ? 1 : 0)	/* helper macro */
+#define mma5_mul_pair(adds1,adds2)			(((adds1) + (adds2) + ((adds1) != 0 && (adds2) != 0)) ? 1 : 0)	/* helper macro */
 #define mma5_sqr_pair(adds1)				((adds1) * 4)							/* helper macro */
 #define mma5_sqr_penalty				(EB_GWMUL_SAVINGS - EB_FIRST_ADD)
 
@@ -995,14 +995,13 @@ struct gwasm_alt_jmptab {	/* Used when pass 1 and pass 2 code is shared among FF
 /* Structure for maintaining groups of blocks for each pass 1 thread to work on. */
 /* Each thread wants to work on contiguous blocks for independent carry propagation. */
 struct pass1_carry_sections {
-	unsigned int start_block;	/* First block in section */
-	unsigned int last_block;	/* Last block in section */
-	unsigned int next_block;	/* First unassigned/unprocessed block */
+	gwatomic change_in_progress;	/* Lock set to TRUE prior to changing start_block, last_block, next_block, section_state, etc. */
 	int	section_state;		/* Various states in processing this section -- see code */
-	int	can_carry_into_next;	/* Flag indicating it is safe to propagate carries out of */
-					/* the last block in this section into the next block */
-	int	dependent_section;	/* Which section's carry out depends on this section finishing */
-					/* processing of its first block to propagate carries into */
+	unsigned int start_block;	/* First block in section */
+	unsigned int next_block;	/* First unassigned/unprocessed block */
+	unsigned int last_block;	/* Last block in section (actually first block after the section) */
+	int	carry_in_blocks_finished; /* Flag indicating it is safe to propagate carries into the first blocks of this section */
+	int	carry_out_section;	/* Which section might receive the carries out of this section (we'll test that section's carry_in_blocks_finished flag) */
 };
 
 /* The FFT types currently implemented in assembly code */
@@ -1128,6 +1127,7 @@ struct gwhandle_struct {
 	short volatile helpers_must_exit; /* Flag set to force all auxiliary threads to terminate */
 	short volatile all_work_assigned; /* Flag indicating all helper thread work has been assigned (some helpers ma still be active) */
 	gwevent can_carry_into;		/* This event signals pass 1 sections that the block they are waiting on to carry into may now be ready. */
+	gwatomic can_carry_into_counter;/* Atomic counter to limit the resets of gwevent can_carry_into */
 	int	pass1_state;		/* Mainly used to keep track of what we are doing in pass 1 of an FFT.  See */
 					/* pass1_get_next_block for details.  Also, 999 means we are in pass 2 of the FFT. */
 	void	*pass1_var_data;	/* pass1 variable sin/cos/premultiplier/fudge/biglit data */
@@ -1142,6 +1142,7 @@ struct gwhandle_struct {
 	unsigned long num_postfft_blocks; /* Number of data blocks that must delay forward fft because POSTFFT is set. */
 	gwthread *thread_ids;		/* Array of auxiliary thread ids */
 	struct pass1_carry_sections *pass1_carry_sections; /* Array of pass1 sections for carry propagation */
+	int	pass1_carry_sections_unallocated; /* Count of auxiliary threads that have not yet been assigned block to work on */
 	void	*multithread_op_data;	/* Data shared amongst add/sub/addsub/smallmul compute threads */
 	uint32_t ASM_TIMERS[32];	/* Internal timers used by me to optimize code */
 	int	bench_pick_nth_fft;	/* DO NOT set this variable.  Internal hack to force the FFT selection code to */
@@ -1151,12 +1152,12 @@ struct gwhandle_struct {
 					/* pick the n-th possible implementation instead of the best one.  The prime95 QA */
 					/* code uses this to compare results from one FFT implementation to the (should */
 					/* be identical) results of another FFT implementation. */
-	int	qa_picked_nth_fft;	/* Internal hack returning which FFT was picked */
+	int	qa_picked_nth_fft;	/* Internal hack returning which FFT implementation was selected */
 	int	careful_count;		/* Count of gwsquare and gwmul3 calls to convert into gwmul3_carefully calls */
 	double	ZPAD_COPY7_ADJUST[7];	/* Adjustments for copying the 7 words around the halfway point of a zero pad FFT. */
 	double	ZPAD_0_6_ADJUST[7];	/* Adjustments for ZPAD0_6 in a r4dwpn FFT */
 	unsigned long wpn_count;	/* Count of r4dwpn pass 1 blocks that use the same ttp/ttmp grp multipliers */
-	gwhandle *clone_of;		/* If this is a cloned gwhandle, this points to the handle that was cloned */
+	gwhandle *clone_of;		/* If this is a cloned gwhandle, this points to the gwhandle that was cloned */
 	gwhandle *to_radix_gwdata;	/* FFTs used in converting to base b from binary in nonbase2_gianttogw */
 	gwhandle *from_radix_gwdata;	/* FFTs used in converting from base b to binary in nonbase2_gwtogiant */
 };
