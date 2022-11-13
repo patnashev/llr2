@@ -7719,6 +7719,7 @@ int multipointPRP(
 				if (error_count > MAX_ERROR_COUNT)
 				{
                     sprintf(buf, "Too many errors, aborting.\n");
+                    OutputError(buf);
 					IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 					io_reset(recoverypoint);
 
@@ -14164,6 +14165,7 @@ restart:
 					if (error_count > MAX_ERROR_COUNT)
 					{
                         sprintf(buf, "Too many errors, aborting.\n");
+                        OutputError(buf);
                         IniWriteString(INI_FILE, "Gerbicz_Error_Count", NULL);
 						io_reset(recoverypoint);
 
