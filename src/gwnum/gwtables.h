@@ -2,7 +2,7 @@
 | This file contains various utility routines that may be used by gwnum
 | setup.
 |
-|  Copyright 2011-2021 Mersenne Research, Inc.  All rights reserved.
+|  Copyright 2011-2022 Mersenne Research, Inc.  All rights reserved.
 +---------------------------------------------------------------------*/
 
 #ifndef _GWTABLES_H
@@ -182,7 +182,7 @@ struct gwasm_data {
 	double	ZPAD_SHIFT1;
 
 	double	ZPAD0_6[7];		/* 7 ZPAD doubles */
-	double	UNUSED_DOUBLES[1];
+	double	ZPAD_LSW_ADJUST;	/* Multiplier for ADDIN_VALUE when ZERO_PADDED k=1, abs(c)!=1 */
 
 	union {
 	    struct zmm_data {

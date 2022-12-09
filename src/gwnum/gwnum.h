@@ -55,9 +55,9 @@ typedef gwnum *gwarray;
 /* are new prime95 versions without any changes in the gwnum code.  This version number is also embedded in the assembly code and */
 /* gwsetup verifies that the version numbers match.  This prevents bugs from accidentally linking in the wrong gwnum library. */
 
-#define GWNUM_VERSION		"30.9"
+#define GWNUM_VERSION		"30.10"
 #define GWNUM_MAJOR_VERSION	30
-#define GWNUM_MINOR_VERSION	9
+#define GWNUM_MINOR_VERSION	10
 
 /* Error codes returned by the three gwsetup routines */
 
@@ -569,7 +569,8 @@ void gw_clear_maxerr (gwhandle *gwdata);
 int gwnear_fft_limit (gwhandle *gwdata, double pct);
 
 /* Returns true if the current FFT length satisfies the given safety margin (such as the value returned by polymult_safety_margin) */
-#define gw_passes_safety_margin(h,safetyval)	((h)->EXTRA_BITS/2.0+(h)->safety_margin > (safetyval))
+/* NOTE: gwdata->safety_margin is already factored into the calculation of EXTRA_BITS */
+#define gw_passes_safety_margin(h,safetyval)	((h)->EXTRA_BITS/2.0 > (safetyval))
 
 /*---------------------------------------------------------------------+
 |                    GWNUM MISC. INFORMATION ROUTINES                  |
@@ -682,8 +683,10 @@ int gwequal (gwhandle *, gwnum, gwnum);
 +---------------------------------------------------------------------*/
 
 /* Experimental routine to clone a gwhandle.  The cloned handle uses less resources than a full gwsetup by sharing many data structures with */
-/* the original handle.  The cloned handle can be used in a limited way in another thread.  Valid operations in the cloned handle are single */
-/* threaded multiplication, addition, subtraction.  Other operations may work as well. */
+/* the original handle.  The cloned handle can be used in a fairly unlimited way in another thread.  Valid operations in the cloned handle are single */
+/* threaded multiplication, addition, subtraction.  Many other operations will work as well. */
+/* NOTE: All memory allocated by gwalloc will be "owned" by the parent gwdata.  These allocated gwnums can be used or freed by the parent gwdata or */
+/* any of the cloned gwdatas. */
 int gwclone (
 	gwhandle *cloned_gwdata,	/* Empty handle to be populated */
 	gwhandle *gwdata);		/* Handle to clone */
@@ -1081,8 +1084,10 @@ struct gwhandle_struct {
 	gwnum	GW_RANDOM;		/* A random number used in gwmul3_carefully. */
 	gwnum	GW_RANDOM_SQUARED;	/* Cached square of the random number used in gwmul3_carefully. */
 	gwnum	GW_RANDOM_FFT;		/* Cached FFT of the random number used in gwmul3_carefully. */
-	gwnum	GW_ADDIN;		/* The gwsetaddin value when we need to emulate GWMUL3_ADDINCONST. */
-	gwnum	GW_FFT1;		/* The number 1 FFTed.  Sometimes need by gwmuladd4 and gwmulsub4. */
+	gwnum	GW_FFT1;		/* The number 1 FFTed.  Sometimes need by gwmuladd4, gwmulsub4, and gwunfft. */
+	gwnum	GW_ADDIN;		/* Cached gwsetaddin value when we need to emulate GWMUL_ADDINCONST. */
+	long	emulate_addin_value;	/* When emulating GWMUL_ADDINCONST, this is a copy of the last value sent to gwsetaddin. */
+	double	asm_addin_value;	/* Value to copy to asm_data->ADDIN_VALUE when GWMUL_ADDINCONST is set. */
 	char	FFT1_state;		/* 0 = FFT(1) needed for FMA but not yet allocated, 1 = FFT(1) needed for FMA and allocated, */
 					/* 2 = FFT(1) is not needed for FMA. */
 	char	FFT1_user_allocated;	/* TRUE if FFT(1) was allocated at user's request */
@@ -1119,9 +1124,10 @@ struct gwhandle_struct {
 	void	(*thread_callback)(int, int, void *); /* Auxiliary thread callback routine letting */
 					/* the gwnum library user set auxiliary thread priority and affinity */
 	void	*thread_callback_data;	/* User-supplied data to pass to the auxiliary thread callback routine */
+	gwmutex alloc_lock;		/* Mutex to allow parent and clones to allocate/free gwnums in a thread-safe manner */
 	gwmutex	thread_lock;		/* This mutex limits one thread at a time in critical sections. */
 	gwevent	work_to_do;		/* Event (if not spin waiting) to signal auxiliary threads there is work to do */
-	gwatomic alt_work_to_do;	/* Atomic alternative to work to do mutex when spin waiting */
+	gwatomic alt_work_to_do;	/* Atomic alternative to work_to_do event when spin waiting */
 	gwevent	all_helpers_done;	/* Event (if not spin waiting) to signal main thread that the auxiliary threads are done */
 	gwatomic num_active_helpers;	/* Number of active helpers (awakened from the work_to_do event).  Is also the alternative to all_helpers_done mutex. */
 	short volatile helpers_must_exit; /* Flag set to force all auxiliary threads to terminate */
@@ -1157,6 +1163,7 @@ struct gwhandle_struct {
 	double	ZPAD_COPY7_ADJUST[7];	/* Adjustments for copying the 7 words around the halfway point of a zero pad FFT. */
 	double	ZPAD_0_6_ADJUST[7];	/* Adjustments for ZPAD0_6 in a r4dwpn FFT */
 	unsigned long wpn_count;	/* Count of r4dwpn pass 1 blocks that use the same ttp/ttmp grp multipliers */
+	gwatomic clone_count;		/* How many times this gwhandle has been cloned */
 	gwhandle *clone_of;		/* If this is a cloned gwhandle, this points to the gwhandle that was cloned */
 	gwhandle *to_radix_gwdata;	/* FFTs used in converting to base b from binary in nonbase2_gianttogw */
 	gwhandle *from_radix_gwdata;	/* FFTs used in converting from base b to binary in nonbase2_gwtogiant */
@@ -1164,9 +1171,8 @@ struct gwhandle_struct {
 
 /* A psuedo declaration for our big numbers.  The actual pointers to */
 /* these big numbers are to the data array.  The 96 bytes prior to the data contain: */
-/* data-4:  integer containing number of unnormalized adds that have been */
-/*	    done.  After a certain number of unnormalized adds, the next add */
-/*	    must be normalized to avoid overflow errors during a multiply. */
+/* data-4:  float containing number of unnormalized adds that have been done.  After a certain number of unnormalized adds, */
+/*	    the next add must be normalized to avoid overflow errors during a multiply. */
 /* data-8:  Four unused bytes. */
 /* data-16: double containing the product of the two sums of the input FFT values. */
 /* data-24: double containing the sum of the output FFT values.  These two */
@@ -1231,8 +1237,10 @@ void specialmodg (gwhandle *, giant);
 void init_FFT1 (gwhandle *);
 
 /* Specialized routines that let the internal giants code share the free memory pool used by gwnums. */
-void gwfree_temporarily (gwhandle *, gwnum);
-void gwrealloc_temporarily (gwhandle *, gwnum);
+// void gwfree_temporarily (gwhandle *, gwnum);		DEPRECATED
+// void gwrealloc_temporarily (gwhandle *, gwnum);	DEPRECATED
+#define gwfree_temporarily(h,g)
+#define gwrealloc_temporarily(h,g)
 
 /* Routines to share the memory of cached free gwnums with giants code. */
 /* Used by prime95 to have the giants GCD code reuse the memory used during P-1 and ECM calculations. */
