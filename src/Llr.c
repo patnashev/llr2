@@ -12648,6 +12648,7 @@ restart:
 		start_timer (0); 
 		start_timer (1); 
 		time (&start_time); 
+		v1 = 0;
 	} 
  
 
