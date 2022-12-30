@@ -22,10 +22,9 @@ int gmodi (	/* Returns g%i as an integer */
 	uint32_t den, giant g) { 
 //	uint32_t wordweight, j, k, size, value;
 	uint32_t size, value;
-	uint32_t denval = den;
 	giant gmod;
-	giantstruct gdenstruct = {1, &denval};
-	giant gden = &gdenstruct;
+	stackgiant(gden, 1);
+	ultog(den, gden);
 	int sign;
 	if (den==1 || g->sign==0) return 0;
 	if (g->sign < 0) {
@@ -55,9 +54,8 @@ int gmodi (	/* Returns g%i as an integer */
 }
 
 void uldivg (uint32_t den, giant num) {
-	uint32_t denval = den;
-	giantstruct gdenstruct = {1, &denval};
-	giant gden = &gdenstruct;
+	stackgiant(gden, 1);
+	ultog(den, gden);
 	divg (gden, num);
 }
 

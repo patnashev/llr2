@@ -777,7 +777,7 @@ int gwtogiant (gwhandle *, gwnum, giant);
 /* gwfftsub3(s1,s2,d)		DEPRECATED - use gwadd3.  Subtracts second FFTed number from first FFTed number */
 /* gwfftaddsub4(s1,s2,d1,d2)	DEPRECATED - use gwaddsub4.  Like gwfftaddsub but stores results in separate variables */
 /* gwsquare(x)			DEPRECATED - use gwsquare2.  Shortcut for gwsquare2(x,x,0) */
-/* gwsquare2(h,s,d) w/o options	DEPRECATED - use the new gwsquare2 and specify 0 for the options argument */
+/* gwsquare2(h,s,d) w/o options	DEPRECATED - use the new gwsquare2 and specify the proper options argument (or use gwsquare2_deprecated macro) */
 /* gwmul(s,d)			DEPRECATED - use gwmul3.  Computes d=s*d.  NOTE: s is replaced by its FFT */
 /* gwsafemul(s,d)		DEPRECATED - use gwmul3.  Like gwmul but s is not replaced with its FFT */
 /* gwfftmul(s,d)		DEPRECATED - use gwmul3.  Computes d=s*d.  NOTE: s must have been previously FFTed */
@@ -795,10 +795,11 @@ int gwtogiant (gwhandle *, gwnum, giant);
 
 /* Macros to implement deprecated routines */
 
-#define oldmulbyconst(h)		(((h)->NORMNUM & 2) ? GWMUL_MULBYCONST : 0)	 /* use deprecated gwsetnormroutine to multiplying result by mulbyconst */
+#define oldmulbyconst(h)		(((h)->NORMNUM & 2) ? GWMUL_MULBYCONST : 0)	 /* use deprecated gwsetnormroutine to multiply result by mulbyconst */
 #define oldstartnextfft(h)		((h)->GLOBAL_POSTFFT ? GWMUL_STARTNEXTFFT : 0)	 /* use deprecated gwstartnextfft for starting next forward FFT */
 
 #define gwsquare(h,s)			gwsquare2 (h,s,s,oldstartnextfft(h) | oldmulbyconst(h) | GWMUL_ADDINCONST)
+#define gwsquare2_deprecated(h,s,d)	gwsquare2 (h,s,d,oldstartnextfft(h) | oldmulbyconst(h) | GWMUL_ADDINCONST)
 #define gwmul(h,s,d)			gwmul3(h,s,d,d,GWMUL_FFT_S1 | oldstartnextfft(h) | oldmulbyconst(h) | GWMUL_ADDINCONST)
 #define gwsafemul(h,s,d)		gwmul3(h,s,d,d,GWMUL_PRESERVE_S1 | oldstartnextfft(h) | oldmulbyconst(h) | GWMUL_ADDINCONST)
 #define gwfftmul(h,s,d)			gwmul3(h,s,d,d,oldstartnextfft(h) | oldmulbyconst(h) | GWMUL_ADDINCONST)

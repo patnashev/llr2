@@ -450,7 +450,7 @@ NOMULTIPLIER:
 			exponent = p;					// get the exponent
 			while (isdigit(*p))				// copy the digits
 				p++;
-			exponent_len = p - exponent;    // cannot terminate exponent with \0 (need +/- for addin), so save its length
+			exponent_len = (int)(p - exponent);    // cannot terminate exponent with \0 (need +/- for addin), so save its length
 			if (*p != '+' && *p != '-')		// must be plus or minus
 				goto errexpr;
 			addin = p;
@@ -470,7 +470,7 @@ NOMULTIPLIER:
 				exponent2 = p;					// get the exponent
 				while (isdigit(*p))				// copy the digits
 					p++;
-				exponent2_len = p - exponent2;	// same problem with unterminated exponent
+				exponent2_len = (int)(p - exponent2);	// same problem with unterminated exponent
 				if (*p != '+' && *p != '-')		// must be plus or minus
 					goto errexpr;
 				dnflag = *p;					// dnflag = sign
