@@ -12,14 +12,13 @@
 | because we call the C runtime library thread create rather than the
 | MFC thread create routine. 
 |
-|  Copyright 2006-2022 Mersenne Research, Inc.  All rights reserved.
+|  Copyright 2006-2023 Mersenne Research, Inc.  All rights reserved.
 +---------------------------------------------------------------------*/
 
 #ifndef _GWTHREAD_H
 #define _GWTHREAD_H
 
-/* This is a C library.  If used in a C++ program, don't let the C++ */
-/* compiler mangle names. */
+/* This is a C library.  If used in a C++ program, don't let the C++ compiler mangle names. */
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,7 +31,7 @@ extern "C" {
 // Hack to workaround MSVC's appalling lack of support for atomics in C, gcc 4.8's missing stdatomic.h, and gcc 8's inability to mix _Atomic in C++ code.
 // Instead we use C++11 std::atomic in gwthread.cpp and export the few routines we need in a simple C interface.
 
-typedef void *gwatomic;			/* Definition of an atomic int */
+typedef int64_t gwatomic;	/* Definition of an atomic int */
 
 #define atomic_set(x,v)		gwatomic_set(&(x), v)				// Equivalent to x = v
 #define atomic_get(x)		gwatomic_get(&(x))				// Equivalent to x
@@ -45,12 +44,12 @@ typedef void *gwatomic;			/* Definition of an atomic int */
 #define atomic_fetch_addin(x,v)	(gwatomic_fetch_add(&(x), v))			// Equivalent to { tmp = x; x += v; return (x); }
 #define atomic_spinwait(x,v)	gwatomic_spinwait(&(x), v)			// Equivalent to while (x != v)
 
-void gwatomic_set (gwatomic *x, int val);
-int gwatomic_get (gwatomic *x);
-int gwatomic_fetch_increment (gwatomic *x);
-int gwatomic_fetch_decrement (gwatomic *x);
-int gwatomic_fetch_add (gwatomic *x, int val);
-void gwatomic_spinwait (gwatomic *x, int val);
+void gwatomic_set (gwatomic *x, int64_t val);
+int64_t gwatomic_get (gwatomic *x);
+int64_t gwatomic_fetch_increment (gwatomic *x);
+int64_t gwatomic_fetch_decrement (gwatomic *x);
+int64_t gwatomic_fetch_add (gwatomic *x, int64_t val);
+void gwatomic_spinwait (gwatomic *x, int64_t val);
 
 /******************************************************************************
 *                         Mutex and Events Routines                           *
